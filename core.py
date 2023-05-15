@@ -4,10 +4,8 @@ import jax.numpy as jnp
 import equinox as eqx
 import jax.numpy.linalg as la
 from typing import Sequence, Union, Tuple, Sequence, Any, Dict
-from jax import jit
+from jax import jit, lax, devices
 from space import Discrete, Box
-from jax import lax
-import matplotlib.pyplot as plt
 
 class EntityState(eqx.Module):
     """Entity state in the environment.
@@ -161,13 +159,12 @@ class Environment(eqx.Module):
             X=init_X,
             X_dot=init_X_dot
         )
-        #keys["env_key"], _ = jrandom.split(keys["env_key"])
-        #key, _ = jrandom.split(key)
+        
         return (self.get_obs(state), state)
     
-    @eqx.filter_jit
+    @eqx.filter_jit(donate='all')
     def single_rollout(self, key):#, policy_params):
-        """Rollout a pendulum episode with lax.scan."""
+        """Rollout an environment episode with lax.scan."""
         # Reset the environment
         (obs, state) = self.reset(key)
 
@@ -191,6 +188,7 @@ class Environment(eqx.Module):
                 new_valid_mask,
             ]
             y = [obs, action, reward, next_obs, done]
+            
             return carry, y
 
         # Scan over episode step loop
@@ -209,19 +207,67 @@ class Environment(eqx.Module):
         # Return the sum of rewards accumulated by agent in episode rollout
         obs, action, reward, next_obs, done = scan_out
         cum_return = carry_out[-2]
+        
         return obs, action, reward, next_obs, done, cum_return
     
     
     @eqx.filter_jit
     def step(self, state:EnvState, joint_action):
         X_ddot = joint_action
-        dt=1/16
+        dt=1/60
         X_dot = state.X_dot + dt * X_ddot
         X = state.X + dt * 50*X_dot/la.norm(X_dot)
         state = EnvState(X, X_dot)
         obs = self.get_obs(state)
         reward = jnp.array([1.0])
         terminated = jnp.array([0.0])
-        
-        #keys["obs_key"], _ = jrandom.split(keys["obs_key"])
+
         return (obs, state, reward, terminated)
+    
+    
+    def render(self, O):
+        import pyglet as pg
+        import numpy as np
+
+        O = np.array(O)
+
+        window = pg.window.Window(800,800, caption="HORC")
+        batch = pg.graphics.Batch()
+        Agents = []
+        for i in range(123):
+            agent = pg.shapes.Circle(x=O[i,0,0,0],y=O[i,0,0,1],radius=10,color=(255,0,0,155),batch=batch)
+            Agents.append(agent)
+            
+        probing_agent = pg.shapes.Star(x=O[-1,0,0,0],y=O[-1,0,0,1],num_spikes=5, inner_radius=10,outer_radius=5,color=(0,0,255,255),batch=batch)
+        Agents.append(probing_agent)
+        window.simulationClock = pg.clock
+
+        t=[0]
+        @window.event
+        def on_key_press(symbol, mods):
+            if symbol==pg.window.key.Q:
+                window.on_close()
+                pg.app.exit()
+            if symbol==pg.window.key.R:
+                t[0]=0
+
+        @window.event
+        def on_draw():
+            window.clear()
+            batch.draw()
+
+        def update(dt):
+            window.clear()
+            # update our circle's position
+            for i, agent in enumerate(Agents):
+                agent.position = O[t[0],0,i]
+            batch.draw()
+            pg.image.get_buffer_manager().get_color_buffer().save(f'saved/screenshot_frame_{t[0]}.png')
+            t[0] += 1
+
+
+        window.simulationClock.schedule_interval(update, 1/60)
+
+        #window.simulationClock.schedule_interval(loop, 1)
+
+        pg.app.run()
