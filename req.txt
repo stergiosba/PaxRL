@@ -1,0 +1,7 @@
+numpy==1.24.1
+jax==0.4.7
+jaxlib==0.4.7
+chex==0.1.7
+pyglet==2.0.7
+equinox==0.10.2
+Pillow==9.5.0

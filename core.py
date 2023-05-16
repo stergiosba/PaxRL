@@ -127,7 +127,7 @@ class Environment(eqx.Module):
         observation_space (Union[Discrete, Box]): Observation space.
         params (Dict): Parameters given to environment form the TOML file.
     """
-    n_agents: Union[chex.Scalar,int]
+    n_agents: int
     action_space: Union[Discrete, Box]
     observation_space: Union[Discrete, Box]
     params: Dict
@@ -262,7 +262,7 @@ class Environment(eqx.Module):
             for i, agent in enumerate(Agents):
                 agent.position = O[t[0],0,i]
             batch.draw()
-            pg.image.get_buffer_manager().get_color_buffer().save(f'saved/screenshot_frame_{t[0]}.png')
+            #pg.image.get_buffer_manager().get_color_buffer().save(f'saved/screenshot_frame_{t[0]}.png')
             t[0] += 1
 
 

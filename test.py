@@ -10,9 +10,6 @@ import jax.random as jrandom
 import tomli
 import time
 import jax
-import os
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 
 def make(env_name)-> Environment:

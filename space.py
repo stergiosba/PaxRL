@@ -36,7 +36,7 @@ class Discrete(Space):
         self.dtype = jnp.float32
 
     @eqx.filter_jit
-    def sample(self, key: chex.PRNGKey, samples=1) -> chex.Array:
+    def sample(self, key: chex.PRNGKey, samples: int=1) -> chex.Array:
         """Sample random action uniformly from set of categorical choices."""
         return jrandom.choice(key, self.actions, shape=(samples,))
     
