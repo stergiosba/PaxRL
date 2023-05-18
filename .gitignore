@@ -1,0 +1,7 @@
+__pycache__
+venv*
+.vscode*
+*.png
+*.jpg
+*.exe
+*.pyc

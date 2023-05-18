@@ -1,6 +1,7 @@
 [settings]
 seed = 17622
-n_agents = 124
+n_agents = 1
+n_scripted_entities = 1422
 episode_size = 5000
 
 [action_space]

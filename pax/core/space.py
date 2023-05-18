@@ -1,17 +1,16 @@
-from typing import Tuple, Union, Sequence, Any, Dict
-from collections import OrderedDict
 import chex
 import jax.random as jrandom
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
 from jax import jit
-from timeit import timeit
+from typing import Tuple, Union, Sequence, Any, Dict
+from collections import OrderedDict
 
 
 class Space(eqx.Module):
     """
-    PyTree implementaion of superclass Space
+    PyTree implementaion of superclass Space based on equinox modules (dataclass)
     """
 
     def sample(self, key: chex.PRNGKey) -> chex.Array:
@@ -23,8 +22,7 @@ class Space(eqx.Module):
 
 class Discrete(Space):
     """
-    Minimal jittable class for discrete gymnax spaces.
-    TODO: For now this is a 1d space. Make composable for multi-discrete.
+    Minimal jittable class for discrete pax spaces.
     """
     actions: chex.Array
     mapping: chex.Scalar
