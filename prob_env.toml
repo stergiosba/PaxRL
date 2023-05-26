@@ -1,8 +1,8 @@
 [settings]
-seed = 17622
+seed = 11
 n_agents = 1
-n_scripted_entities = 1422
-episode_size = 5000
+n_scripted_entities = 25
+episode_size = 500
 
 [action_space]
 actions = [[-10.0, 0.0],[-10.0, -10.0],[-10.0, -5.0],[-10.0, 0.0],[-10.0, 5.0], [-10.0, 10.0],

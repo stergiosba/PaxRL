@@ -34,9 +34,13 @@ class EnvState(eqx.Module):
     Args:
         X (chex.Array): Position of every Agents
         X_dot (chex.Array): Velocity of every Agent
+        leader (int): The leader identification
+        t (float): Time step
     """
     X: chex.Array
     X_dot: chex.Array
+    leader: int
+    t: float
     
     def __repr__(self):
         return f"{__class__.__name__}: {str(self.__dict__)}"
