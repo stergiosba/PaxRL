@@ -1,36 +1,39 @@
 import jax.numpy as jnp
 import equinox as eqx
 import jax.debug as debug
+import jax.numpy.linalg as la
 import numpy as np
-from jax import jit
+from jax import jit, lax
 
 @jit
-def nearest_neighbors_jax(X, X_dot):
+def nearest_neighbors_jax(t, leader, X, X_dot):
     distances = jnp.sum((X[:, None, :] - X[None, :, :]) ** 2, axis=-1)
-    neighborhood_radius = 30
+    neighborhood_radius = 40
 
     column_indices = jnp.where(((distances>0)&(distances<=neighborhood_radius**2)),size=len(X)*(len(X)-1))[1]
     queries = X[column_indices]
     #neighbor_counts = jnp.cumsum(jnp.sum(((distances>0)&(distances<=neighborhood_radius**2)),axis=0))
     I = ((distances>0)&(distances<=neighborhood_radius**2)).astype(int)
-    I_l = ((distances>0)&(distances<=(2*neighborhood_radius)**2)).astype(int)
-    neighbors_count = jnp.sum(I,axis=0)
-
+    I = np.concatenate([I[:leader,:],I[leader+1:]])
+    L = ((distances>0)&(distances<=(2*neighborhood_radius)**2)).astype(int)[leader]
+    neighbors_count = jnp.sum(I, axis=0)
+    Q = neighbors_count+L
+    J = jnp.where(neighbors_count>0,1,0)
     a = jnp.arange(len(queries))
-
-    steer = jnp.zeros([len(X),2])
+    #steers = lax.cond(True,lambda x: x+1, lambda x: x-1,len(X))
+    #debug.print("I={steers}\n---",steers=steers)
+    #steer = jnp.zeros([len(X),2])
     
-    #A = I[:,:,None]*X
-    #steer = jnp.mean(A,axis=-2)-X
-    '''
-    debug.print("I={I}\n",I=I)
-    debug.print("---")
-    debug.print("I_l={I}\n",I=I_l)
-    debug.print("###")
-    debug.print("G={I}\n",I=steer)
-    debug.print("$$$")
+    eps = 10**-16
+    A = jnp.mean(I[:,:,None]*X, axis=-2)-X
+    norm_A = A/la.norm(A+eps, axis=1)[:,jnp.newaxis]
     
-    '''
+    B = jnp.mean(I[:,:,None]*X_dot, axis=-2)
+    norm_B = B/la.norm(B+eps, axis=1)[:,jnp.newaxis]
+    
+    
+    steer = 20*(norm_A -X_dot) + 20*(norm_B-X_dot)
+    debug.print("t:{t} - norm_B={J}\n",t=Q, J=neighbors_count)
     
 
     return steer,queries,neighbors_count,column_indices
@@ -39,7 +42,7 @@ def nearest_neighbors_jax(X, X_dot):
 def script(state, n_scripted_entities):
     X_scripted = state.X[:n_scripted_entities]
     X_dot_scripted = state.X_dot[:n_scripted_entities]
-    steer,queries,neighbor_counts,column_indices = nearest_neighbors_jax(X_scripted, X_dot_scripted)
+    steer,queries,neighbor_counts,column_indices = nearest_neighbors_jax(state.t, state.leader, X_scripted, X_dot_scripted)
 
     return steer
 

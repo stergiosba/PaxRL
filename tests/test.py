@@ -9,8 +9,8 @@ def run_test_1():
     env = make("prob_env")
     
     key = jrandom.PRNGKey(env.params["settings"]["seed"])
-    keys = jrandom.split(key, 1000)
+    keys = jrandom.split(key, 1)
     s = time.time()
     O, A, R, _, _, cr = env.batch_rollout(keys)
     print(time.time()-s)
-    render(env, O, 340)
+    render(env, O, 0)

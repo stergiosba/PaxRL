@@ -62,7 +62,7 @@ class Environment(eqx.Module):
     @eqx.filter_jit
     def reset(self, key: chex.PRNGKey) -> Tuple[chex.Array, EnvState]:
         """Resets the environment."""
-        init_X_scripted_entities = jnp.array([525,775])+50*jrandom.normal(
+        init_X_scripted_entities = jnp.array([600,600])+15*jrandom.normal(
             key, shape=(self.n_scripted_entities,2)
             )
         init_X_dot_scripted_entities = jrandom.uniform(
@@ -80,7 +80,7 @@ class Environment(eqx.Module):
             )
         
         leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted_entities-1)
-        
+        #TODO Reorder the scripted agents so that the leader is last in their part of the state.
         state = EnvState(
             X=jnp.concatenate([init_X_scripted_entities,
                             init_X_agents]),
