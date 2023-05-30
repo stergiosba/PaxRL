@@ -62,7 +62,7 @@ class Environment(eqx.Module):
     @eqx.filter_jit
     def reset(self, key: chex.PRNGKey) -> Tuple[chex.Array, EnvState]:
         """Resets the environment."""
-        init_X_scripted_entities = jnp.array([600,600])+15*jrandom.normal(
+        init_X_scripted_entities = jnp.array([600,600])+45*jrandom.normal(
             key, shape=(self.n_scripted_entities,2)
             )
         init_X_dot_scripted_entities = jrandom.uniform(

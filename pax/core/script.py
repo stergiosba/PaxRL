@@ -12,28 +12,28 @@ def nearest_neighbors_jax(t, leader, X, X_dot):
 
     column_indices = jnp.where(((distances>0)&(distances<=neighborhood_radius**2)),size=len(X)*(len(X)-1))[1]
     queries = X[column_indices]
-    #neighbor_counts = jnp.cumsum(jnp.sum(((distances>0)&(distances<=neighborhood_radius**2)),axis=0))
+
+    # Calculate every swarm agent's neighborhood
     I = ((distances>0)&(distances<=neighborhood_radius**2)).astype(int)
-    I = np.concatenate([I[:leader,:],I[leader+1:]])
+    
+    # Calculate leader's neighborhood
     L = ((distances>0)&(distances<=(2*neighborhood_radius)**2)).astype(int)[leader]
     neighbors_count = jnp.sum(I, axis=0)
-    Q = neighbors_count+L
-    J = jnp.where(neighbors_count>0,1,0)
-    a = jnp.arange(len(queries))
-    #steers = lax.cond(True,lambda x: x+1, lambda x: x-1,len(X))
-    #debug.print("I={steers}\n---",steers=steers)
-    #steer = jnp.zeros([len(X),2])
+    S = neighbors_count+L
     
+    # Small epsilon to avoid division by zero
     eps = 10**-16
-    A = jnp.mean(I[:,:,None]*X, axis=-2)-X
-    norm_A = A/la.norm(A+eps, axis=1)[:,jnp.newaxis]
+    # Cohesion steer calculations
+    cohesion = (jnp.sum(I[:,:,None]*X, axis=-2)+L[:,None]*X[leader])/(S[:,None]+eps)-X
+    normed_cohesion = cohesion/la.norm(cohesion+eps, axis=1)[:,None]
     
-    B = jnp.mean(I[:,:,None]*X_dot, axis=-2)
-    norm_B = B/la.norm(B+eps, axis=1)[:,jnp.newaxis]
+    # Alignment steer calculations
+    alignment = (jnp.mean(I[:,:,None]*X_dot, axis=-2)+L[:,None]*X_dot[leader])/(S[:,None]+eps)
+    normed_alignment = alignment/la.norm(alignment+eps, axis=1)[:,None]
     
     
-    steer = 20*(norm_A -X_dot) + 20*(norm_B-X_dot)
-    debug.print("t:{t} - norm_B={J}\n",t=Q, J=neighbors_count)
+    steer = 20*(normed_cohesion-X_dot) + 20*(normed_alignment-X_dot)
+    #debug.print("t:{t} - A={J}\n",t=t, J=I@X)    
     
 
     return steer,queries,neighbors_count,column_indices
