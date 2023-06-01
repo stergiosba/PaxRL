@@ -30,14 +30,15 @@ def render(env, O, env_id, render_mode=None, save=0):
                 scripted_entity = pg.shapes.Circle(x=P[0,0,i,0],y=P[0,0,i,1],\
                 radius=10,color=(0,255,255,155), batch=batch)
                 entity_neighborhood = pg.shapes.Circle(x=P[0,0,i,0],y=P[0,0,i,1],\
-                radius=60,color=(0,255,255,45), batch=batch)
+                radius=80,color=(0,255,255,45), batch=batch)
+                line1 = pg.shapes.Line(P[0,0,i,0], P[0,0,i,1], P[0,0,i,0]+150*P[0,1,i,0], P[0,0,i,1]+150*P[0,1,i,1], 2, color = (0, 0, 0, 255), batch = batch)
 
             else:
                 scripted_entity = pg.shapes.Circle(x=P[0,0,i,0],y=P[0,0,i,1],\
                     radius=10,color=(255,0,0,155), batch=batch)
 
                 entity_neighborhood = pg.shapes.Circle(x=P[0,0,i,0],y=P[0,0,i,1],\
-                radius=30,color=(255,0,0,45), batch=batch)
+                radius=40,color=(255,0,0,45), batch=batch)
             label = pg.text.Label(str(i),
                         font_name='Times New Roman',
                         font_size=12,
@@ -80,6 +81,7 @@ def render(env, O, env_id, render_mode=None, save=0):
                 ScriptedEntities[i].position = P[t[0],0,i]
                 virtuals[i].position = P[t[0],0,i]
                 Labels[i].position = (P[t[0],0,i][0],P[t[0],0,i][1],0)
+            line1.position = P[t[0],0,L]
                 
             for i in range(env.n_agents):
                 Agents[i].position = P[t[0],0,env.n_scripted_entities+i]

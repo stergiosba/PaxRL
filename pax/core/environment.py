@@ -111,8 +111,7 @@ class Environment(eqx.Module):
             #    action = self.model_forward(policy_params, obs, rng_net)
             #else:
             scripted_action = script(state, self.n_scripted_entities)
-            #scripted_action = jnp.zeros([self.n_scripted_entities,2])
-            #debug.print("Script.py:{t}:{X}\n---", t=state.t, X=scripted_action)
+
             joint_action = self.action_space.sample(act_key, samples=self.n_agents)
             action = jnp.concatenate([scripted_action,joint_action])
             # Step the environment as normally.

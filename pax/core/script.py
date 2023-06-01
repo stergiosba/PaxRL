@@ -5,44 +5,80 @@ import jax.numpy.linalg as la
 import numpy as np
 from jax import jit, lax
 
+
 @jit
-def nearest_neighbors_jax(t, leader, X, X_dot):
-    distances = jnp.sum((X[:, None, :] - X[None, :, :]) ** 2, axis=-1)
-    neighborhood_radius = 40
+def distances_matrix_jax(X):
+    return jnp.sum((X[:, None, :] - X[None, :, :]) ** 2, axis=-1)
 
-    column_indices = jnp.where(((distances>0)&(distances<=neighborhood_radius**2)),size=len(X)*(len(X)-1))[1]
-    queries = X[column_indices]
+@jit
+def neighbors(distance_matrix, agent_radius):
+    neighbors_matrix = ((distance_matrix>0)&(distance_matrix<=agent_radius**2))
+    neighbors_count = jnp.sum(neighbors_matrix, axis=0)
+    return neighbors_matrix, neighbors_count
 
-    # Calculate every swarm agent's neighborhood
-    I = ((distances>0)&(distances<=neighborhood_radius**2)).astype(int)
-    
-    # Calculate leader's neighborhood
-    L = ((distances>0)&(distances<=(2*neighborhood_radius)**2)).astype(int)[leader]
-    neighbors_count = jnp.sum(I, axis=0)
-    S = neighbors_count+L
-    
+@jit
+def leader_neighbors(leader_distances, leader_radius):
+    return ((leader_distances>0)&(leader_distances<=(2*leader_radius)**2))
+
+@jit
+def cohesion_steer(X, leader, neighbors_matrix, leader_neighbors_count, total_count):
     # Small epsilon to avoid division by zero
     eps = 10**-16
     # Cohesion steer calculations
-    cohesion = (jnp.sum(I[:,:,None]*X, axis=-2)+L[:,None]*X[leader])/(S[:,None]+eps)-X
-    normed_cohesion = cohesion/la.norm(cohesion+eps, axis=1)[:,None]
+    cohesion = (jnp.sum(neighbors_matrix[:,:,None]*X, axis=-2)+leader_neighbors_count[:,None]*X[leader])/(total_count[:,None]+eps)-X
+    
+    return cohesion/la.norm(cohesion+eps, axis=1)[:,None]
+
+@jit
+def alignment_steer(X_dot, leader, neighbors_matrix, leader_neighbors_count, total_count):
+    # Small epsilon to avoid division by zero
+    eps = 10**-16
+    # Alignment steer calculations
+    alignment = (jnp.sum(neighbors_matrix[:,:,None]*X_dot, axis=-2)+leader_neighbors_count[:,None]*X_dot[leader])/(total_count[:,None]+eps)
+    
+    return alignment/la.norm(alignment+eps, axis=1)[:,None]
+    
+@jit 
+def separation_steer(X, distance_matrix, neighbors_matrix):
+    # Small epsilon to avoid division by zero
+    eps = 10**-16
+    n = len(X)
+    corrected_distance_matrix = distance_matrix+jnp.eye(n)
+    separation =  jnp.sum(neighbors_matrix/corrected_distance_matrix,axis=1)[:,None]*X - ((neighbors_matrix/corrected_distance_matrix)[:,None]@X).reshape(n,2)
+    
+    return separation/la.norm(separation+eps, axis=1)[:,None]
+
+#@jit(backend="cpu")
+def reynolds_jax(t, leader, X, X_dot):
+    n = len(X)
+    distance_matrix = distances_matrix_jax(X)
+    agent_radius = 40
+    leader_radius = 2*agent_radius
+
+    # Calculate every swarm agent's neighborhood
+    neighbors_matrix, neighbors_count = neighbors(distance_matrix, agent_radius)
+    
+    # Calculate if i'th agent is in the leader's neighborhood 
+    leader_neighbors_count = leader_neighbors(distance_matrix[leader], leader_radius)
+    
+    total_count = neighbors_count+leader_neighbors_count
+    
+    # Cohesion steer calculations
+    cohesion = cohesion_steer(X, leader, neighbors_matrix, leader_neighbors_count, total_count)
     
     # Alignment steer calculations
-    alignment = (jnp.mean(I[:,:,None]*X_dot, axis=-2)+L[:,None]*X_dot[leader])/(S[:,None]+eps)
-    normed_alignment = alignment/la.norm(alignment+eps, axis=1)[:,None]
+    alignment = alignment_steer(X_dot, leader, neighbors_matrix, leader_neighbors_count, total_count)
     
-    
-    steer = 20*(normed_cohesion-X_dot) + 20*(normed_alignment-X_dot)
-    #debug.print("t:{t} - A={J}\n",t=t, J=I@X)    
-    
+    # Separation steer calculations
+    separation =  separation_steer(X, distance_matrix, neighbors_matrix)
 
-    return steer,queries,neighbors_count,column_indices
+    return 20*(cohesion-X_dot) + 10*(alignment-X_dot) + 25*(separation-X_dot)
 
 @eqx.filter_jit
 def script(state, n_scripted_entities):
     X_scripted = state.X[:n_scripted_entities]
     X_dot_scripted = state.X_dot[:n_scripted_entities]
-    steer,queries,neighbor_counts,column_indices = nearest_neighbors_jax(state.t, state.leader, X_scripted, X_dot_scripted)
+    steer = reynolds_jax(state.t, state.leader, X_scripted, X_dot_scripted)
 
     return steer
 
