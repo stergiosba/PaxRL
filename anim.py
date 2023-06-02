@@ -3,11 +3,11 @@ import pyglet as pg
 
 frames = []
 
-for i in range(1,239):
+for i in range(1,398):
     frames.append(pg.resource.image(f"saved/screenshot_frame_{i}.png"))
 
 window = pg.window.Window(800,800, caption="HORC")
-ani = pg.image.Animation.from_image_sequence(frames, duration=1/16, loop=True)
+ani = pg.image.Animation.from_image_sequence(frames, duration=1/60, loop=True)
 sprite = pg.sprite.Sprite(ani)
 
 @window.event

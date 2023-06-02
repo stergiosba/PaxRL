@@ -14,4 +14,4 @@ def run_test_1(console_args):
     O, A, R, _, _, cr = jax_batch_rollout(keys)
     print(time.time()-s)
 
-    render(env, O, 0, console_args.render)
+    render(env, O, 0, console_args.render, 0)

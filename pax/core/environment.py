@@ -13,18 +13,24 @@ import logging
 from pax.core.paxlog import Paxlogger
             
     
-class Environment(eqx.Module):
-    """Environment class
-
+class Environment():
+    """The main Pax class.
+        It encapsulates an environment with arbitrary behind-the-scenes dynamics. 
+        An environment can be partially or fully observed.
+    
     Args:
-        n_agents 
-        action_space (Union[Discrete, Box]): Action space allowed to the agents.
-        observation_space (Union[Discrete, Box]): Observation space.
-        params (Dict): Parameters given to environment form the TOML file.
+        - `n_agents` (int): The total number of agents (actors) in the environment. 
+        - `n_scripted` (int): The total number of scripted entities in the environment.
+        - `action_space` (Union[Discrete, Box]): The action space allowed to the agents.
+        - `observation_space` (Union[Discrete, Box]): The observation space of the environment.
+        - `params` (Dict): Parameters given to environment from the TOML file.
+        
     """
+    
+    # TODO: Refactor in the future so that the environment is separate from the scenario
     params: Dict
     n_agents: int
-    n_scripted_entities: int
+    n_scripted: int
     action_space: Union[Discrete, Box]
     observation_space: Union[Discrete, Box]
     logger: Any
@@ -32,7 +38,7 @@ class Environment(eqx.Module):
     def __init__(self, params):
         self.params = params
         self.n_agents = self.params["settings"]["n_agents"]
-        self.n_scripted_entities = self.params["settings"]["n_scripted_entities"]
+        self.n_scripted = self.params["settings"]["n_scripted_entities"]
         self.create_spaces()
         self.logger = logging.getLogger("PAX: ")
         self.logger.setLevel(logging.DEBUG)
@@ -61,13 +67,23 @@ class Environment(eqx.Module):
 
     @eqx.filter_jit
     def reset(self, key: chex.PRNGKey) -> Tuple[chex.Array, EnvState]:
-        """Resets the environment."""
-        init_X_scripted_entities = jnp.array([600,600])+45*jrandom.normal(
-            key, shape=(self.n_scripted_entities,2)
+        """Resets the environment.
+
+        Args:
+            key (chex.PRNGKey): The random key for the reset.
+
+        Returns:
+            Observations (chex.Array) The initial observation of the environment based on the observation function get_obs
+            State (EnvState): The initial state of the environment. Used internally.
+        """        
+
+        init_X_scripted = jrandom.uniform(
+            key, minval=550, maxval=650, \
+            shape=(self.n_scripted,2)
             )
-        init_X_dot_scripted_entities = jrandom.uniform(
+        init_X_dot_scripted = jrandom.uniform(
             key, minval=-1, maxval=1, \
-            shape=(self.n_scripted_entities,2)
+            shape=(self.n_scripted,2)
             )
         
         init_X_agents = jrandom.uniform(
@@ -79,12 +95,12 @@ class Environment(eqx.Module):
             shape=(self.n_agents,2)
             )
         
-        leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted_entities-1)
-        #TODO Reorder the scripted agents so that the leader is last in their part of the state.
+        leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted-1)
+
         state = EnvState(
-            X=jnp.concatenate([init_X_scripted_entities,
+            X=jnp.concatenate([init_X_scripted,
                             init_X_agents]),
-            X_dot=jnp.concatenate([init_X_dot_scripted_entities,
+            X_dot=jnp.concatenate([init_X_dot_scripted,
                             init_X_dot_agents]),
             leader = leader,
             t=0
@@ -92,13 +108,36 @@ class Environment(eqx.Module):
         
         return (self.get_obs(state), state)
     
-    def batch_rollout(self, keys):
+    def batch_rollout(self, keys: jrandom.KeyArray) -> chex.Array:
+        """Produces a batch rollout of an environment. Vectorized mapping over an array of keys.
+
+        Args:
+            keys (jrandom.KeyArray): A matrix of PRNG keys to map over.
+
+        Returns:
+            (chex.Array): The batched rollouts for as many environment as the number of keys.
+        """
         batch_rollout = vmap(self.single_rollout, in_axes=(0))
         return batch_rollout(keys)
     
     @eqx.filter_jit(donate='all')
-    def single_rollout(self, key):#, policy_params):
-        """Rollout an environment episode with lax.scan."""
+    def single_rollout(self, key: chex.PRNGKey) -> Tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array, chex.Array]:#, policy_params):
+        """
+        Efficient rollout of a singe environment episode with lax.scan.
+
+        Args:
+            `self` (Environment): The environment instance
+            `key` (chex.PRNGKey): The PRNG key that determines the rollout of the episode
+
+        Returns:
+            - `obs` (chex.Array): The observations collected from the episode.
+            - `action` (chex.Array): The actions collected from the episode.
+            - `reward` (chex.Array): The rewards collected from the episode.
+            - `next_obs` (chex.Array): The next observation,
+            - `done` (chex.Array): Done flag,
+            - `cum_return` (chex.Array): Summation of the rewards collected over the episode.
+        """ 
+        
         # Reset the environment
         (obs, state) = self.reset(key)
 
@@ -110,7 +149,8 @@ class Environment(eqx.Module):
             #if self.model_forward is not None:
             #    action = self.model_forward(policy_params, obs, rng_net)
             #else:
-            scripted_action = script(state, self.n_scripted_entities)
+            debug.print("s={s}",s=state.X)
+            scripted_action = script(state, self.n_scripted)
 
             joint_action = self.action_space.sample(act_key, samples=self.n_agents)
             action = jnp.concatenate([scripted_action,joint_action])
