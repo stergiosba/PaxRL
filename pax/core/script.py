@@ -23,8 +23,25 @@ def distances_matrix_jax(X:chex.Array) -> chex.Array:
 
 
 @jit
+def leader_neighbors(
+        leader_distances:chex.Array,
+        leader_radius: float) -> chex.Array:
+    """Calculates the neighborhood for the leader agent as a set.
+    Args:
+        leader_distances (chex.Array): Row of distance matrix, containing euclidean distances between the leader and each swarm agent.
+        leader_radius (float): Influence radius for the leader agent (typically taken as a scaled version of the simple agent's radius)
+
+    Returns:
+        leader_neighbors_matrix (chex.Array): Boolean vector of leader's neighbors.\n
+    """
+    return ((leader_distances>0)&(leader_distances<=(leader_radius)**2))
+
+
+@jit
 def neighbors(
-        distance_matrix:chex.Array, agent_radius: float) -> Tuple[chex.Array, chex.Array]:
+        distance_matrix: chex.Array,
+        agent_radius: float,
+        leader_neighbors_count: chex.Array) -> Tuple[chex.Array, chex.Array]:
     """Calculates the neighborhood for each agent as a set and the cardinality of each set.
     Args:
         distance_matrix (chex.Array): Distance matrix, contains euclidean distances between all pairs of swarm agents.
@@ -35,21 +52,9 @@ def neighbors(
         neighbors_count (chex.Array): Row-wise sum of neighbors_matrix, i.e. cardinality of each neighborhood. 
     """
     neighbors_matrix = ((distance_matrix>0)&(distance_matrix<=agent_radius**2))
-    neighbors_count = jnp.sum(neighbors_matrix, axis=0)
+    neighbors_count = jnp.sum(neighbors_matrix, axis=0)#-leader_neighbors_count
+    
     return neighbors_matrix, neighbors_count
-
-
-@jit
-def leader_neighbors(leader_distances:chex.Array, leader_radius: float) -> chex.Array:
-    """Calculates the neighborhood for the leader agent as a set.
-    Args:
-        leader_distances (chex.Array): Row of distance matrix, containing euclidean distances between the leader and each swarm agent.
-        leader_radius (float): Influence radius for the leader agent (typically taken as a scaled version of the simple agent's radius)
-
-    Returns:
-        leader_neighbors_matrix (chex.Array): Boolean vector of leader's neighbors.\n
-    """
-    return ((leader_distances>0)&(leader_distances<=(leader_radius)**2))
 
 
 @jit
@@ -87,6 +92,10 @@ def cohesion_steer(
     cohesion = (neighbors_influence+leader_influence) \
                 /(total_count[:,None]+eps) \
                 -X
+                
+    # Leader whitening
+    cohesion = cohesion.at[leader_id].set(jnp.array([0,0]))
+                
     # Return normalized cohesion
     return cohesion/la.norm(cohesion+eps, axis=1)[:,None]
 
@@ -101,8 +110,19 @@ def alignment_steer(
         total_count: chex.Array) -> chex.Array:
     # Small epsilon to avoid division by zero
     eps = 10**-16
+    
+    # Influence from simple neighbors
+    neighbors_influence = jnp.sum(neighbors_matrix[:,:,None]*X_dot, axis=-2)
+    
+    # Leader influence
+    leader_influence = leader_factor*leader_neighbors_count[:,None]*X_dot[leader_id]
+    
     # Alignment steer calculation
-    alignment = (jnp.sum(neighbors_matrix[:,:,None]*X_dot, axis=-2)+leader_factor*leader_neighbors_count[:,None]*X_dot[leader_id])/(total_count[:,None]+eps)
+    alignment = (neighbors_influence+leader_influence) \
+                /(total_count[:,None]+eps)
+                
+    # Leader whitening
+    alignment = alignment.at[leader_id].set(jnp.array([0,0]))
     
     return alignment/la.norm(alignment+eps, axis=1)[:,None]
 
@@ -128,19 +148,20 @@ def separation_steer(X, dist_mat, neighbors_matrix):
 def reynolds_jax(leader, X, X_dot):
     n = len(X)
     distance_matrix = distances_matrix_jax(X)
-    agent_radius = 40
-    leader_radius = 2*agent_radius
+    agent_radius = 30
+    leader_radius = 4*agent_radius
     
-    leader_factor=2
+    leader_factor=5
 
-    # Calculate every swarm agent's neighborhood
-    neighbors_matrix, neighbors_count = neighbors(distance_matrix, agent_radius)
-    
     # Calculate if i'th agent is in the leader's neighborhood 
     leader_neighbors_count = leader_neighbors(distance_matrix[leader], leader_radius)
     
-    total_count = neighbors_count+leader_factor*leader_neighbors_count
+    # Calculate every swarm agent's neighborhood
+    neighbors_matrix, neighbors_count = neighbors(distance_matrix, agent_radius, leader_neighbors_count)
     
+    #leader = jnp.argmax(neighbors_count, axis=0)
+    
+    total_count = neighbors_count+leader_factor*leader_neighbors_count
     # Cohesion steer calculations
     cohesion = cohesion_steer(X, leader, leader_factor, neighbors_matrix, leader_neighbors_count, total_count)
     
@@ -149,10 +170,9 @@ def reynolds_jax(leader, X, X_dot):
     
     # Separation steer calculations
     separation =  separation_steer(X, distance_matrix, neighbors_matrix)
-    debug.print("f={f}\n-----",f=cohesion[1])
+    neighbors_mask = (jnp.any(neighbors_matrix,axis=0) + leader_neighbors_count)[:,None]
     
-    neighbors_mask = jnp.any(neighbors_matrix,axis=0)[:,None]
-    return neighbors_mask*(9*(cohesion-X_dot)+ 10*(alignment-X_dot) + 8*(separation-X_dot))
+    return neighbors_mask*(4*(cohesion-X_dot)+ 20*(alignment-X_dot) + 15*(separation-X_dot)), leader
 
 
 @eqx.filter_jit

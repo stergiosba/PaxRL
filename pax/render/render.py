@@ -1,7 +1,7 @@
 import chex
 import pyglet as pg
 import numpy as np
-
+from pax.render.utils import VisualEntity
 
 def render(env, O, env_id, render_mode=None, save=0):
     if not render_mode:
@@ -9,7 +9,7 @@ def render(env, O, env_id, render_mode=None, save=0):
     elif render_mode in ['h','H',"human","Human"]:
         # Check for instance of observations array, if jax.array cast it to numpy for fast access.
         P = O[0][env_id]
-        L = O[1][env_id][0]
+        L = O[1][env_id]
         if isinstance(P, chex.Array):
             P = np.array(P)
             
@@ -21,42 +21,26 @@ def render(env, O, env_id, render_mode=None, save=0):
         batch = pg.graphics.Batch()
         fps = pg.window.FPSDisplay(window=window)
         ScriptedEntities = []
-        scripted_visuals = []
-        agents_visuals = []
-        Labels = []
         
         for i in range(env.n_scripted):
-            if i==L:
-                scripted_entity = pg.shapes.Circle(x=P[0,0,i,0],y=P[0,0,i,1],\
-                    radius=10,color=(0,255,255,155), batch=batch)
-                entity_neighborhood = pg.shapes.Circle(x=P[0,0,i,0],y=P[0,0,i,1],\
-                    radius=80,color=(0,255,255,45), batch=batch)
-                #line1 = pg.shapes.Line(P[0,0,i,0], P[0,0,i,1], P[0,0,i,0]+150*P[0,1,i,0], P[0,0,i,1]+150*P[0,1,i,1], 2, color = (0, 0, 0, 255), batch = batch)
+            if i==L[0]:
+                scripted_entity = VisualEntity(id=i, x=P[0,0,i,0],y=P[0,0,i,1],\
+                    radius=10, neighborhood_radius=120, color=(255,128,0,155), batch=batch)
             else:
-                scripted_entity = pg.shapes.Circle(x=P[0,0,i,0],y=P[0,0,i,1],\
-                    radius=10,color=(255,0,0,155), batch=batch)
-
-                entity_neighborhood = pg.shapes.Circle(x=P[0,0,i,0],y=P[0,0,i,1],\
-                    radius=40,color=(255,0,0,45), batch=batch)
-                
-            label = pg.text.Label(str(i),
-                        font_name='Times New Roman',
-                        font_size=12,
-                        x=P[0,0,i,0], y=P[0,0,i,1],
-                        color=(0,0,0,255),
-                        anchor_x='center', anchor_y='center', batch=batch)
+                scripted_entity = VisualEntity(id=i, x=P[0,0,i,0],y=P[0,0,i,1],\
+                    radius=10, neighborhood_radius=30, color=(0,0,255,155), batch=batch)
+            
             ScriptedEntities.append(scripted_entity)
-            scripted_visuals.append(entity_neighborhood)
-            Labels.append(label)
             
         Agents = []
         for i in range(env.n_scripted, env.n_scripted+env.n_agents):
-            agent = pg.shapes.Star(x=P[0,0,i,0],y=P[0,0,i,1], \
-                outer_radius=5, inner_radius = 10, num_spikes=5,color=(0,0,255,155), batch=batch)
-            agent_radius = pg.shapes.Circle(x=P[0,0,i,0],y=P[0,0,i,1],\
-            radius=120,color=(0,0,255,45), batch=batch)
+            agent = VisualEntity(id=i, x=P[0,0,i,0],y=P[0,0,i,1],\
+                    radius=10, neighborhood_radius=120, color=(0,0,0,155), batch=batch)
+            #agent = pg.shapes.Star(x=P[0,0,i,0],y=P[0,0,i,1], \
+            #    outer_radius=5, inner_radius = 10, num_spikes=5,color=(0,0,0,155), batch=batch)
+            #agent_radius = pg.shapes.Circle(x=P[0,0,i,0],y=P[0,0,i,1],\
+            #radius=120,color=(0,0,0,45), batch=batch)
             Agents.append(agent)
-            agents_visuals.append(agent_radius)
             
         window.simulationClock = pg.clock
 
@@ -79,13 +63,12 @@ def render(env, O, env_id, render_mode=None, save=0):
             window.clear()
             for i in range(env.n_scripted):
                 ScriptedEntities[i].position = P[t[0],0,i]
-                scripted_visuals[i].position = P[t[0],0,i]
-                Labels[i].position = (P[t[0],0,i][0],P[t[0],0,i][1],0)
-            #line1.position = P[t[0],0,L]
+                ScriptedEntities[i].update(P[t[0],1,i])
                 
             for i in range(env.n_agents):
                 Agents[i].position = P[t[0],0,env.n_scripted+i]
-                agents_visuals[i].position = P[t[0],0,env.n_scripted+i]
+                Agents[i].update(P[t[0],1,env.n_scripted+i])
+                #agents_visuals[i].position = P[t[0],0,env.n_scripted+i]
             batch.draw()
             pg.gl.glClearColor(1, 1, 1, 1)
             if save:

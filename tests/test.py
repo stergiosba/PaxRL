@@ -11,7 +11,12 @@ def run_test_1(console_args):
     keys = jrandom.split(key, 1)
     s = time.time()
     jax_batch_rollout = jax.jit(env.batch_rollout, backend=console_args.device)
-    O, A, R, _, _, cr = jax_batch_rollout(keys)
+    if console_args.profile:
+        with jax.profiler.trace(console_args.profile, create_perfetto_link=True):
+            O, A, R, _, _, cr = jax_batch_rollout(keys)
+    else:
+            O, A, R, _, _, cr = jax_batch_rollout(keys)
+    #O.block_until_ready()
     print(time.time()-s)
 
     render(env, O, 0, console_args.render, 0)

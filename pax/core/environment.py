@@ -3,18 +3,18 @@ import jax.random as jrandom
 import jax.numpy as jnp
 import equinox as eqx
 import jax.numpy.linalg as la
+import logging
 from typing import Sequence, Union, Tuple, Sequence, Any, Dict
 from jax import jit, vmap, lax, devices, debug
 from pax.core.space import Discrete, Box
 from pax.core.state import EntityState, AgentState, EnvState
 from pax.core.actors import ScriptedEntity, Agent
 from pax.core.script import script
-import logging
 from pax.core.paxlog import Paxlogger
             
     
 class Environment():
-    """The main Pax class.
+    """The main `Pax` class.
         It encapsulates an environment with arbitrary behind-the-scenes dynamics. 
         An environment can be partially or fully observed.
     
@@ -149,13 +149,12 @@ class Environment():
             #if self.model_forward is not None:
             #    action = self.model_forward(policy_params, obs, rng_net)
             #else:
-            debug.print("s={s}",s=state.X)
-            scripted_action = script(state, self.n_scripted)
+            scripted_action, leader = script(state, self.n_scripted)
 
             joint_action = self.action_space.sample(act_key, samples=self.n_agents)
             action = jnp.concatenate([scripted_action,joint_action])
             # Step the environment as normally.
-            (next_obs, next_state, reward, done) = self.step(state, action)
+            (next_obs, next_state, reward, done) = self.step(state, action, leader)
             new_cum_reward = cum_reward + reward * valid_mask
             new_valid_mask = valid_mask * (1 - done)
             carry = [
@@ -190,15 +189,13 @@ class Environment():
     
     
     @eqx.filter_jit
-    def step(self, state:EnvState, action):
+    def step(self, state:EnvState, action, leader):
         X_ddot = action
         dt=1/60
         X_dot = state.X_dot + dt * X_ddot
-        X = state.X + 50*dt*X_dot/la.norm(X_dot, axis=1)[:,jnp.newaxis]
+        X = state.X + 50*dt*X_dot/la.norm(X_dot, axis=1)[:,None]
         t = state.t+dt
-        #debug.print("{t}:{X}\n---", t=t, X=X_ddot)
-        #debug.print("{t}:{X}\n---", t=t, X=X_ddot)
-        state = EnvState(X, X_dot ,state.leader, t)
+        state = EnvState(X, X_dot, leader, t)
         obs = self.get_obs(state)
         reward = jnp.array([1.0]) 
         terminated = jnp.array([0.0])

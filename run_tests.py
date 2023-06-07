@@ -25,8 +25,11 @@ parser = argparse.ArgumentParser(
     prog='PAX',
     description="Probing agents for swarm leader identification", epilog="")
 
-render_mode = parser.add_argument('-r', '--render', type=str, dest="render", help='Choose render mode (Default: None) - (Options: None/Human)')
+render_mode = parser.add_argument('-r', '--render', type=str, dest="render", help='Choose render mode (Options: Human)')
 device = parser.add_argument('-d', '--device', type=str, default="cpu", dest="device", help='Choose a device (Default: cpu) - (Options: cpu/gpu)')
+
+# Currently profile does not work due to a bug in CUDA 12.1 https://github.com/google/jax/issues/15384
+profile = parser.add_argument('-p', '--profile', type=str, default="", dest="profile", help='Choose if code is profiled by specifying a directory')
 parser.print_help()
 args = parser.parse_args()
 print(args.device)
