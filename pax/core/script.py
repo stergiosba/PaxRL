@@ -84,9 +84,11 @@ def cohesion_steer(
     
     # Influence from simple neighbors
     neighbors_influence = jnp.sum(neighbors_matrix[:,:,None]*X, axis=-2)
-    
+    max_speed = 2
+    neighbors_influence = max_speed*(neighbors_influence/la.norm(neighbors_influence+eps, axis=1)[:,None])
     # Leader influence
     leader_influence = leader_factor*leader_neighbors_count[:,None]*X[leader_id]
+    
     
     # Cohesion steer calculation
     cohesion = (neighbors_influence+leader_influence) \
@@ -109,22 +111,26 @@ def alignment_steer(
         leader_neighbors_count: chex.Array,
         total_count: chex.Array) -> chex.Array:
     # Small epsilon to avoid division by zero
-    eps = 10**-16
+    eps = 10**-7
     
     # Influence from simple neighbors
     neighbors_influence = jnp.sum(neighbors_matrix[:,:,None]*X_dot, axis=-2)
     
     # Leader influence
     leader_influence = leader_factor*leader_neighbors_count[:,None]*X_dot[leader_id]
+
+    max_speed = 2
+    neighbors_influence = max_speed*(neighbors_influence/la.norm(neighbors_influence+eps, axis=1)[:,None])
     
     # Alignment steer calculation
     alignment = (neighbors_influence+leader_influence) \
                 /(total_count[:,None]+eps)
-                
+
     # Leader whitening
-    alignment = alignment.at[leader_id].set(jnp.array([0,0]))
-    
-    return alignment/la.norm(alignment+eps, axis=1)[:,None]
+    #alignment = alignment.at[leader_id].set(jnp.array([0,0]))
+
+    max_force = 10
+    return max_force*(alignment/la.norm(alignment+eps, axis=1)[:,None])
 
 
 @jit 
@@ -172,7 +178,7 @@ def reynolds_jax(leader, X, X_dot):
     separation =  separation_steer(X, distance_matrix, neighbors_matrix)
     neighbors_mask = (jnp.any(neighbors_matrix,axis=0) + leader_neighbors_count)[:,None]
     
-    return neighbors_mask*(4*(cohesion-X_dot)+ 20*(alignment-X_dot) + 15*(separation-X_dot)), leader
+    return neighbors_mask*(8*(cohesion-X_dot)+ 30*(alignment-X_dot) + 10*(separation-X_dot)), leader
 
 
 @eqx.filter_jit
