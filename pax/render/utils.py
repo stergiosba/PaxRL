@@ -12,7 +12,7 @@ class VisualEntity(pg.shapes.Circle):
                         x=x, y=y,
                         color=(0,0,0,255),
                         anchor_x='center', anchor_y='center', batch=batch)
-        #self.neighborhood = pg.shapes.Circle(x, y, radius=neighborhood_radius, color=(color[0], color[1], color[2], 45), batch=batch)
+        self.neighborhood = pg.shapes.Circle(x, y, radius=neighborhood_radius, color=(color[0], color[1], color[2], 45), batch=batch)
         
         self.heading = pg.shapes.Line(x, y, x, y, 2, color = (255, 0, 0, 255), batch = batch)
         
