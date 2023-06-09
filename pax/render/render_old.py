@@ -64,7 +64,7 @@ def render(env, O, env_id, render_mode=None, save=0):
             for i in range(env.n_agents):
                 Agents[i].position = P[t[0],0,env.n_scripted+i]
                 Agents[i].update(P[t[0],1,env.n_scripted+i])
-                #agents_visuals[i].position = P[t[0],0,env.n_scripted+i]
+
             batch.draw()
             pg.gl.glClearColor(1, 1, 1, 1)
             if save:

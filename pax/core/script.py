@@ -134,7 +134,7 @@ def alignment_steer(
 
 
 @jit 
-def separation_steer(X, dist_mat, neighbors_matrix):
+def separation_steer(X, X_dot, dist_mat, neighbors_matrix, ):
     # Small epsilon to avoid division by zero
     eps = 10**-16
     n = len(X)
@@ -144,10 +144,14 @@ def separation_steer(X, dist_mat, neighbors_matrix):
     # will not change the calculations for separation since 
     adj_dist_mat = dist_mat+jnp.eye(n)
     
-    # Separation steer calculation
-    separation = jnp.sum(neighbors_matrix/adj_dist_mat,axis=1)[:,None]*X - ((neighbors_matrix/adj_dist_mat)[:,None]@X).reshape(n,2)
+    scaled_neighbors_matrix = neighbors_matrix/adj_dist_mat
     
-    return separation/la.norm(separation+eps, axis=1)[:,None]
+    # Separation steer calculation
+    separation = jnp.sum(scaled_neighbors_matrix,axis=1)[:,None]*X - scaled_neighbors_matrix@X
+    separation = separation/(la.norm(separation+eps, axis=1)[:,None])
+    separation = separation-X_dot
+    
+    return separation/(la.norm(separation+eps, axis=1)[:,None])
 
 
 @jit
@@ -175,10 +179,10 @@ def reynolds_jax(leader, X, X_dot):
     alignment = alignment_steer(X_dot, leader, leader_factor, neighbors_matrix, leader_neighbors_count, total_count)
     
     # Separation steer calculations
-    separation =  separation_steer(X, distance_matrix, neighbors_matrix)
+    separation =  separation_steer(X, X_dot, distance_matrix, neighbors_matrix)
     neighbors_mask = (jnp.any(neighbors_matrix,axis=0) + leader_neighbors_count)[:,None]
     
-    return neighbors_mask*(8*(cohesion-X_dot)+ 30*(alignment-X_dot) + 10*(separation-X_dot)), leader
+    return neighbors_mask*(8*(cohesion-X_dot)+ 10*(alignment-X_dot) + 10*(separation)), leader
 
 
 @eqx.filter_jit
