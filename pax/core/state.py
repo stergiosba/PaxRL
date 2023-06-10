@@ -3,11 +3,11 @@ import jax.numpy as jnp
 import equinox as eqx
 
 class EntityState(eqx.Module):
-    """Entity state in the environment.
+    """Physical state of an entity in the environment.
 
-    Args:
-        pos (chex.Array[2]): Position of the entity
-        vel (chex.Array[2]): Velocity of the entity
+    `Args`:
+        - `pos (chex.Array)`: Position of the entity
+        - `vel (chex.Array)`: Velocity of the entity
     """    
     pos: chex.Array = jnp.zeros(2)
     vel: chex.Array = jnp.zeros(2) 
@@ -16,11 +16,10 @@ class EntityState(eqx.Module):
         return f"{__class__.__name__}: {str(self.__dict__)}"
 
 class AgentState(EntityState):
-    """ State of agents (including communication and internal/physical state)
+    """ State of agents (inherits from physical state and adds communication)
 
-    Args:
-        EntityState (_type_): Entity state
-        
+    `Args`:
+        - `com (chex.Array)`: Communication state   
     """
     com: chex.Array = jnp.empty(1)
 
@@ -31,15 +30,17 @@ class AgentState(EntityState):
 class EnvState(eqx.Module):
     """The environment state (Multiple Agents)
 
-    Args:
-        X (chex.Array): Position of every Agents
-        X_dot (chex.Array): Velocity of every Agent
-        leader (int): The leader identification
-        t (float): Time step
+    `Args`:
+        - `X (chex.Array)`: Position of every Agents.
+        - `X_dot (chex.Array)`: Velocity of every Agent.
+        - `leader (int)`: The id of the leader agent.
+        - `goal (chex.Array)`: The location of the goal.
+        - `t (float)`: Time step.
     """
     X: chex.Array
     X_dot: chex.Array
     leader: int
+    goal: chex.Array
     t: float
     
     def __repr__(self):

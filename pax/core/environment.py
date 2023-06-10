@@ -62,8 +62,16 @@ class Environment():
     
     @eqx.filter_jit
     def get_obs(self, state: EnvState) -> chex.Array:
-        """Applies observation function to state."""
-        return jnp.array([state.X, state.X_dot]), state.leader
+        """Applies observation function to state.
+
+        `Args`:
+            - `state (EnvState)`: The full state of the environment.
+
+        Returns:
+            `- observation (chex.Array)`: The observable part of the state.
+        """
+
+        return jnp.array([state.X, state.X_dot]), state.leader, state.goal
 
     @eqx.filter_jit
     def reset(self, key: chex.PRNGKey) -> Tuple[chex.Array, EnvState]:
@@ -96,6 +104,11 @@ class Environment():
             )
 
         leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted-1)
+
+        goal = jrandom.uniform(
+            key, minval=550, maxval=650, \
+            shape=(2,)
+            )
         
         state = EnvState(
             X=jnp.concatenate([init_X_scripted,
@@ -103,6 +116,7 @@ class Environment():
             X_dot=jnp.concatenate([init_X_dot_scripted,
                             init_X_dot_agents]),
             leader = leader,
+            goal = goal,
             t=0
         )
         
@@ -191,39 +205,14 @@ class Environment():
     
     @eqx.filter_jit
     def step(self, state:EnvState, action, leader):
-        '''
-        def applyBounds(bounds_X, bounds_Y, x, y, velocity, wall_damping=1):
-            if abs(x-bounds_X[0])<=10:
-                x = bounds_X[0]+10
-                velocity[0] *= -wall_damping
-                velocity[1] *= wall_damping
-            
-            if abs(x-bounds_X[1])<=10:
-                x = bounds_X[1]-10
-                velocity[0] *= -wall_damping
-                velocity[1]  *= wall_damping
-
-            if abs(y-bounds_Y[0])<=10:
-                y = bounds_Y[0]+10
-                velocity[0] *= wall_damping
-                velocity[1]  *= -wall_damping
-
-            if abs(y-bounds_Y[1])<=10:
-                y = bounds_Y[1]-10
-                velocity[0] *= wall_damping
-                velocity[1]  *= -wall_damping
-
-            return (x, y, velocity)
-        '''
         X_ddot = action
         dt=1/60
         X_dot = state.X_dot + dt * X_ddot
         X = state.X + 60*dt*X_dot/la.norm(X_dot, axis=1)[:,None]
-        #J = jnp.where(X<800)
-        
-        #debug.print("limit={x}",x=J)
+        X = jnp.clip(X,a_min=0,a_max=800)
+
         t = state.t+dt
-        state = EnvState(X, X_dot, leader, t)
+        state = EnvState(X, X_dot, leader, state.goal, t)
         obs = self.get_obs(state)
         reward = jnp.array([1.0])
         

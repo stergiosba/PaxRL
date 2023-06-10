@@ -10,13 +10,16 @@ def render(env, O, env_id, render_mode=None, save=0):
         # Check for instance of observations array, if jax.array cast it to numpy for fast access.
         P = O[0][env_id]
         L = O[1][env_id]
+        G = O[2][env_id]
         if isinstance(P, chex.Array):
             P = np.array(P)
             
         if isinstance(L, chex.Array):
             L = np.array(L)
+
+        if isinstance(G, chex.Array):
+            G = np.array(G)
         
-            
         window = pg.window.Window(800,800, caption="HORC")
         batch = pg.graphics.Batch()
         fps = pg.window.FPSDisplay(window=window)
@@ -37,6 +40,11 @@ def render(env, O, env_id, render_mode=None, save=0):
             agent = VisualEntity(id=i, x=P[0,0,i,0],y=P[0,0,i,1],\
                     radius=10, neighborhood_radius=120, color=(0,0,0,155), batch=batch)
             Agents.append(agent)
+
+        goal_boss = pg.shapes.Star(x=G[0,0],y=G[0,1], \
+                    outer_radius=4, inner_radius = 20, num_spikes=5,color=(0,0,0,255), batch=batch)
+        goal = pg.shapes.Star(x=G[0,0],y=G[0,1], \
+                            outer_radius=5, inner_radius = 10, num_spikes=5,color=(200,200,0,255), batch=batch)
             
         window.simulationClock = pg.clock
 

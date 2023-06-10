@@ -8,7 +8,7 @@ def run_test_1(console_args):
     env = make("prob_env")
     
     key = jrandom.PRNGKey(env.params["settings"]["seed"])
-    keys = jrandom.split(key, 1)
+    keys = jrandom.split(key, 25)
     s = time.time()
     jax_batch_rollout = jax.jit(env.batch_rollout, backend=console_args.device)
     if console_args.profile:
