@@ -46,11 +46,19 @@ def render(env, O, env_id, render_mode=None, save=0):
             if symbol==pg.window.key.Q:
                 window.on_close()
                 pg.app.exit()
+                
             if symbol==pg.window.key.R:
-                t[0]=0
+                t[0] = 0
+                
+            if symbol==pg.window.key.P:
+                window.simulationClock.unschedule(update)
+                
+            if symbol==pg.window.key.S:
+                window.simulationClock.schedule_interval(update, 1/60)
 
         @window.event
         def on_draw():
+            pg.gl.glClearColor(1, 1, 1, 1)
             window.clear()
             batch.draw()
             fps.draw()
@@ -58,22 +66,19 @@ def render(env, O, env_id, render_mode=None, save=0):
         def update(dt):
             window.clear()
             for i in range(env.n_scripted):
-                ScriptedEntities[i].position = P[t[0],0,i]
-                ScriptedEntities[i].update(P[t[0],1,i])
+                ScriptedEntities[i].update(P[t[0],0,i], P[t[0],1,i])
                 
             for i in range(env.n_agents):
-                Agents[i].position = P[t[0],0,env.n_scripted+i]
-                Agents[i].update(P[t[0],1,env.n_scripted+i])
-                #agents_visuals[i].position = P[t[0],0,env.n_scripted+i]
+                Agents[i].update(P[t[0],0,env.n_scripted+i], P[t[0],1,env.n_scripted+i])
+            
             batch.draw()
-            pg.gl.glClearColor(1, 1, 1, 1)
+            
             if save:
                 pg.image.get_buffer_manager().get_color_buffer().save(f'saved/screenshot_frame_{t[0]}.png')
             t[0] += 1
             
             t[0]%=env.params["settings"]['episode_size']
 
-
-        window.simulationClock.schedule_interval(update, 1/60)
+        #window.simulationClock.schedule_interval(update, 1/60)
 
         pg.app.run()

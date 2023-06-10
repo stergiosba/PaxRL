@@ -15,9 +15,11 @@ class VisualEntity(pg.shapes.Circle):
         self.neighborhood = pg.shapes.Circle(x, y, radius=neighborhood_radius, color=(color[0], color[1], color[2], 45), batch=batch)
         
         self.heading = pg.shapes.Line(x, y, x, y, 2, color = (255, 0, 0, 255), batch = batch)
-        
-    def update(self, velocity):
-        self.neighborhood.position = self.position
+    
+    def update(self, position, velocity):
+        self._x, self._y = position
+        self._update_translation()
+        self.neighborhood.position = position
         self.heading.x = self.x
         self.heading.y = self.y
         

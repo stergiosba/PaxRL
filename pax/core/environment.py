@@ -70,11 +70,11 @@ class Environment():
         """Resets the environment.
 
         Args:
-            key (chex.PRNGKey): The random key for the reset.
+            -`key (chex.PRNGKey)`: The random key for the reset.
 
         Returns:
-            Observations (chex.Array) The initial observation of the environment based on the observation function get_obs
-            State (EnvState): The initial state of the environment. Used internally.
+            - `Observations (chex.Array)`: The initial observation of the environment based on the observation function get_obs
+            - `State (EnvState)`: The initial full state of the environment. Used internally.
         """        
 
         init_X_scripted = jrandom.uniform(
@@ -94,9 +94,9 @@ class Environment():
             key, minval=-1, maxval=1, \
             shape=(self.n_agents,2)
             )
-        
-        leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted-1)
 
+        leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted-1)
+        
         state = EnvState(
             X=jnp.concatenate([init_X_scripted,
                             init_X_agents]),
@@ -150,9 +150,9 @@ class Environment():
             #    action = self.model_forward(policy_params, obs, rng_net)
             #else:
             scripted_action, leader = script(state, self.n_scripted)
-
             joint_action = self.action_space.sample(act_key, samples=self.n_agents)
             action = jnp.concatenate([scripted_action,joint_action])
+
             # Step the environment as normally.
             (next_obs, next_state, reward, done) = self.step(state, action, leader)
             new_cum_reward = cum_reward + reward * valid_mask
@@ -188,16 +188,45 @@ class Environment():
         return obs, action, reward, next_obs, done, cum_return
     
     
+    
     @eqx.filter_jit
     def step(self, state:EnvState, action, leader):
+        '''
+        def applyBounds(bounds_X, bounds_Y, x, y, velocity, wall_damping=1):
+            if abs(x-bounds_X[0])<=10:
+                x = bounds_X[0]+10
+                velocity[0] *= -wall_damping
+                velocity[1] *= wall_damping
+            
+            if abs(x-bounds_X[1])<=10:
+                x = bounds_X[1]-10
+                velocity[0] *= -wall_damping
+                velocity[1]  *= wall_damping
+
+            if abs(y-bounds_Y[0])<=10:
+                y = bounds_Y[0]+10
+                velocity[0] *= wall_damping
+                velocity[1]  *= -wall_damping
+
+            if abs(y-bounds_Y[1])<=10:
+                y = bounds_Y[1]-10
+                velocity[0] *= wall_damping
+                velocity[1]  *= -wall_damping
+
+            return (x, y, velocity)
+        '''
         X_ddot = action
         dt=1/60
         X_dot = state.X_dot + dt * X_ddot
-        X = state.X + 50*dt*X_dot/la.norm(X_dot, axis=1)[:,None]
+        X = state.X + 60*dt*X_dot/la.norm(X_dot, axis=1)[:,None]
+        #J = jnp.where(X<800)
+        
+        #debug.print("limit={x}",x=J)
         t = state.t+dt
         state = EnvState(X, X_dot, leader, t)
         obs = self.get_obs(state)
-        reward = jnp.array([1.0]) 
+        reward = jnp.array([1.0])
+        
         terminated = jnp.array([0.0])
 
         return (obs, state, reward, terminated)
