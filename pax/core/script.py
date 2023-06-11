@@ -1,7 +1,7 @@
 import chex
 import jax.numpy as jnp
 import equinox as eqx
-import jax.debug as debug
+from jax.debug import print as dprint
 import jax.numpy.linalg as la
 import numpy as np
 from typing import Tuple
@@ -36,14 +36,13 @@ def leader_neighbors(
         - `leader_neighbors_matrix (chex.Array)`: Boolean vector of leader's neighbors.
     """
     
-    return ((leader_distances>0)&(leader_distances<=(leader_radius)**2))
+    return ((leader_distances>0)&(leader_distances<=(leader_radius)**2)).astype(int)
 
 
 @jit
 def neighbors(
         distance_matrix: chex.Array,
-        agent_radius: float,
-        leader_neighbors_count: chex.Array) -> Tuple[chex.Array, chex.Array]:
+        agent_radius: float) -> Tuple[chex.Array, chex.Array]:
     """Calculates the neighborhood for each agent as a set and the cardinality of each set.
     Args:
         - `distance_matrix (chex.Array)`: Distance matrix, contains euclidean distances between all pairs of swarm agents.
@@ -54,8 +53,8 @@ def neighbors(
         - `neighbors_count (chex.Array)`: Row-wise sum of neighbors_matrix, i.e. cardinality of each neighborhood. 
     """
     
-    neighbors_matrix = ((distance_matrix>0)&(distance_matrix<=agent_radius**2))
-    neighbors_count = jnp.sum(neighbors_matrix, axis=0)#-leader_neighbors_count
+    neighbors_matrix = ((distance_matrix>0)&(distance_matrix<=agent_radius**2)).astype(int) 
+    neighbors_count = jnp.sum(neighbors_matrix, axis=0)
     
     return neighbors_matrix, neighbors_count
 
@@ -117,7 +116,7 @@ def cohesion_steer(
     cohesion = max_speed*(cohesion/la.norm(cohesion+eps, axis=1)[:,None]) - X_dot
 
     # Leader whitening (i.e. the leader is not affected by anyone.)
-    cohesion = cohesion.at[leader_id].set(jnp.array([0,0]))
+    #cohesion = cohesion.at[leader_id].set(jnp.array([0,0]))
     
     max_force = 20
     return max_force*(cohesion/la.norm(cohesion+eps, axis=1)[:,None])
@@ -161,7 +160,7 @@ def alignment_steer(
     alignment = max_speed*(alignment/la.norm(alignment+eps, axis=1)[:,None]) - X_dot
 
     # Leader whitening (i.e. the leader is not affected by anyone.)
-    alignment = alignment.at[leader_id].set(jnp.array([0,0]))
+    #alignment = alignment.at[leader_id].set(jnp.array([0,0]))
     
     max_force = 20
     return max_force*(alignment/la.norm(alignment+eps, axis=1)[:,None])
@@ -200,7 +199,7 @@ def separation_steer(
     max_speed = 2
     separation = jnp.sum(scaled_neighbors_matrix,axis=1)[:,None]*X - scaled_neighbors_matrix@X
     separation = max_speed*(separation/(la.norm(separation+eps, axis=1)[:,None])) - X_dot
-    #separation = separation.at[7].set(jnp.array([0,0]))
+    
     max_force = 20
     return max_force*(separation/(la.norm(separation+eps, axis=1)[:,None]))
 
@@ -227,13 +226,13 @@ def reynolds_jax(leader: int, X: chex.Array, X_dot: chex.Array) -> Tuple[chex.Ar
     leader_radius = 4*agent_radius
     
     # Leader strength
-    leader_str = 5
+    leader_str = 50
 
     # Calculate the neighborhood of the leader that uses different radius.
     leader_neighbors_count = leader_neighbors(distance_matrix[leader], leader_radius)
     
     # Calculate the neighborhood of every swarm agent.
-    neighbors_matrix, neighbors_count = neighbors(distance_matrix, agent_radius, leader_neighbors_count)
+    neighbors_matrix, neighbors_count = neighbors(distance_matrix, agent_radius)
     
     # For dynamic leader allocation. Later work.
     #leader = jnp.argmax(neighbors_count, axis=0)
@@ -251,13 +250,13 @@ def reynolds_jax(leader: int, X: chex.Array, X_dot: chex.Array) -> Tuple[chex.Ar
     separation =  separation_steer(X, X_dot, distance_matrix, neighbors_matrix)
     
     # Performs neighbors masking.
-    neighbors_mask = (jnp.any(neighbors_matrix,axis=0) + leader_neighbors_count)[:,None]
-
+    total_mask = (total_count>0)[:,None]
+    neighbors_mask = (neighbors_count>0)[:,None]
     w_c = 0.4
     w_a = 1
-    w_s = 1
+    w_s = 2
 
-    return neighbors_mask*(w_c*cohesion+ w_a*alignment + w_s*separation), leader
+    return (total_mask*(w_c*cohesion+ w_a*alignment) + neighbors_mask*w_s*separation), leader
 
 
 @eqx.filter_jit

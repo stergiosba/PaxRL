@@ -23,7 +23,6 @@ def distances_matrix_jax(X:chex.Array) -> chex.Array:
     return jnp.sum((X[:, None, :] - X[None, :, :]) ** 2, axis=-1)
 
 
-
 @jit
 def neighbors(
         distance_matrix: chex.Array,

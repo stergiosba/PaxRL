@@ -1,8 +1,8 @@
 [settings]
-seed = 23
+seed = 87212
 n_agents = 1
-n_scripted_entities = 2
-episode_size = 700
+n_scripted_entities = 20
+episode_size = 50
 
 [action_space]
 actions = [[-10.0, 0.0],[-10.0, -10.0],[-10.0, -5.0],[-10.0, 0.0],[-10.0, 5.0], [-10.0, 10.0],
@@ -15,3 +15,6 @@ actions = [[-10.0, 0.0],[-10.0, -10.0],[-10.0, -5.0],[-10.0, 0.0],[-10.0, 5.0], 
 low = 0
 high = 800
 shape = [2,1]
+
+[parallel]
+n_env = 15

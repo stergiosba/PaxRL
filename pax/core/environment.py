@@ -94,8 +94,8 @@ class Environment():
             shape=(self.n_scripted,2)
             )
         
-        init_X_agents = jrandom.uniform(
-            key, minval=150, maxval=250, \
+        init_X_agents = jnp.array([0,500])+jrandom.uniform(
+            key, minval=100, maxval=150, \
             shape=(self.n_agents,2)
             )
         init_X_dot_agents = jrandom.uniform(
@@ -106,7 +106,7 @@ class Environment():
         leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted-1)
 
         goal = jrandom.uniform(
-            key, minval=550, maxval=650, \
+            key, minval=25, maxval=175, \
             shape=(2,)
             )
         
@@ -150,7 +150,7 @@ class Environment():
             - `next_obs` (chex.Array): The next observation,
             - `done` (chex.Array): Done flag,
             - `cum_return` (chex.Array): Summation of the rewards collected over the episode.
-        """ 
+        """
         
         # Reset the environment
         (obs, state) = self.reset(key)
@@ -219,3 +219,6 @@ class Environment():
         terminated = jnp.array([0.0])
 
         return (obs, state, reward, terminated)
+    
+    def __repr__(self):
+        return f"{__class__.__name__}: {str(self.__dict__)}"
