@@ -3,78 +3,91 @@ import jax.random as jrandom
 import jax.numpy as jnp
 import equinox as eqx
 import jax.numpy.linalg as la
-import logging
 from typing import Sequence, Union, Tuple, Sequence, Any, Dict
 from jax import jit, vmap, lax, devices, debug
-from pax.core.space import Discrete, Box
-from pax.core.state import EntityState, AgentState, EnvState
-from pax.core.actors import ScriptedEntity, Agent
-from pax.core.script import script
-from pax.core.paxlog import Paxlogger
-            
+from pax.core.spaces import *
+from pax.core.script_inter import script
+from jax.debug import print as dprint  #type: ignore
+
+class EnvState(eqx.Module):
+    """The environment state (Multiple Agents)
+
+    `Args`:
+        - `X (chex.Array)`: Position of every Agents.
+        - `X_dot (chex.Array)`: Velocity of every Agent.
+        - `leader (int)`: The id of the leader agent.
+        - `goal (chex.Array)`: The location of the goal.
+    """
+    X: chex.Array
+    X_dot: chex.Array
+    leader: chex.Array
+    goal: chex.Array
     
-class Environment():
+    def __repr__(self):
+        return f"{__class__.__name__}: {str(self.__dict__)}"
+     
+    
+class Environment(eqx.Module):
     """The main `Pax` class.
-        It encapsulates an environment with arbitrary behind-the-scenes dynamics. 
-        An environment can be partially or fully observed.
+        It encapsulates an environment with arbitrary dynamics. 
+        An environment can be partially or fully observable.
     
-    Args:
-        - `n_agents` (int): The total number of agents (actors) in the environment. 
-        - `n_scripted` (int): The total number of scripted entities in the environment.
-        - `action_space` (Union[Discrete, Box]): The action space allowed to the agents.
-        - `observation_space` (Union[Discrete, Box]): The observation space of the environment.
-        - `params` (Dict): Parameters given to environment from the TOML file.
+    `Attributes`:
+        - `n_agents (int)`: The total number of agents (actors) in the environment. 
+        - `n_scripted (int)`: The total number of scripted entities in the environment.
+        - `action_space (Union[Discrete, Box])`: The action space allowed to the agents.
+        - `observation_space (Union[Discrete, Box])`: The observation space of the environment.
+        - `params (Dict)`: Parameters given to environment from the TOML file.
         
     """
     
     # TODO: Refactor in the future so that the environment is separate from the scenario
-    params: Dict
     n_agents: int
     n_scripted: int
-    action_space: Union[Discrete, Box]
-    observation_space: Union[Discrete, Box]
-    logger: Any
+    action_space: Union[Discrete, MultiDiscrete, Box]
+    observation_space: Union[Discrete, MultiDiscrete, Box]
+    params: Dict
 
-    def __init__(self, params):
+    def __init__(
+            self,
+            params):
+        """
+        Args:
+           `params (Dict)`: Parameters given to environment from the TOML file.
+        """
         self.params = params
-        self.n_agents = self.params["settings"]["n_agents"]
-        self.n_scripted = self.params["settings"]["n_scripted_entities"]
+        self.n_agents = self.params["scenario"]["n_agents"]
+        self.n_scripted = self.params["scenario"]["n_scripted_entities"]
         self.create_spaces()
-        self.logger = logging.getLogger("PAX: ")
-        self.logger.setLevel(logging.DEBUG)
-
-        # create console handler with a higher log level
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.DEBUG)
-
-        ch.setFormatter(Paxlogger())
-
-        self.logger.addHandler(ch)
-        self.logger.debug("Started environment")
 
     def create_spaces(self):
-        actions = jnp.array(self.params["action_space"]["actions"])
-        self.action_space = Discrete(actions)
+        action_range = self.params["action_space"].values()
+        self.action_space = MultiDiscrete(action_range) #type: ignore
 
         o_dtype = jnp.float32
         o_low, o_high, o_shape = self.params["observation_space"].values()
-        self.observation_space = Box(o_low, o_high, tuple(o_shape), o_dtype)
+        self.observation_space = Box(o_low, o_high, o_shape, o_dtype) #type: ignore
+
     
     @eqx.filter_jit
-    def get_obs(self, state: EnvState) -> chex.Array:
+    def get_obs(
+        self,
+        state: EnvState) -> Sequence[chex.Array]:
         """Applies observation function to state.
 
         `Args`:
             - `state (EnvState)`: The full state of the environment.
 
         Returns:
-            `- observation (chex.Array)`: The observable part of the state.
+            - `observation (chex.Array)`: The observable part of the state.
         """
 
         return jnp.array([state.X, state.X_dot]), state.leader, state.goal
 
     @eqx.filter_jit
-    def reset(self, key: chex.PRNGKey) -> Tuple[chex.Array, EnvState]:
+    def reset(
+            self,
+            key: chex.PRNGKey) -> Tuple[Sequence[chex.Array], EnvState]:
         """Resets the environment.
 
         Args:
@@ -86,18 +99,20 @@ class Environment():
         """        
 
         init_X_scripted = jrandom.uniform(
-            key, minval=550, maxval=650, \
+            key, minval=645, maxval=765, \
             shape=(self.n_scripted,2)
             )
+        
         init_X_dot_scripted = jrandom.uniform(
             key, minval=-1, maxval=1, \
             shape=(self.n_scripted,2)
             )
         
-        init_X_agents = jnp.array([0,500])+jrandom.uniform(
-            key, minval=100, maxval=150, \
+        init_X_agents = jrandom.uniform(
+            key, minval=400, maxval=300, \
             shape=(self.n_agents,2)
             )
+        
         init_X_dot_agents = jrandom.uniform(
             key, minval=-1, maxval=1, \
             shape=(self.n_agents,2)
@@ -106,23 +121,31 @@ class Environment():
         leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted-1)
 
         goal = jrandom.uniform(
-            key, minval=25, maxval=175, \
+            key, minval=0, maxval=800, \
             shape=(2,)
             )
-        
+
+
         state = EnvState(
             X=jnp.concatenate([init_X_scripted,
                             init_X_agents]),
             X_dot=jnp.concatenate([init_X_dot_scripted,
                             init_X_dot_agents]),
             leader = leader,
-            goal = goal,
-            t=0
+            goal = goal
         )
-        
-        return (self.get_obs(state), state)
+        return (self.get_obs(state), state) #type: ignore
     
-    def batch_rollout(self, keys: jrandom.KeyArray) -> chex.Array:
+    @eqx.filter_jit
+    def batch_step(
+            self,
+            state,
+            action):
+        return vmap(self.step, in_axes=(0, 0))(state, action)
+    
+    def batch_rollout(
+            self,
+            keys: jrandom.PRNGKeyArray) -> Sequence[chex.Array]:
         """Produces a batch rollout of an environment. Vectorized mapping over an array of keys.
 
         Args:
@@ -134,8 +157,11 @@ class Environment():
         batch_rollout = vmap(self.single_rollout, in_axes=(0))
         return batch_rollout(keys)
     
-    @eqx.filter_jit(donate='all')
-    def single_rollout(self, key: chex.PRNGKey) -> Tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array, chex.Array]:#, policy_params):
+    @eqx.filter_jit
+    def single_rollout(
+            self,
+            key: chex.PRNGKey) -> Tuple[chex.Array,chex.Array,chex.Array,
+                                        chex.Array,chex.Array,chex.Array]:#, policy_params):
         """
         Efficient rollout of a singe environment episode with lax.scan.
 
@@ -155,7 +181,9 @@ class Environment():
         # Reset the environment
         (obs, state) = self.reset(key)
 
-        def policy_step(state_input, tmp):
+        def policy_step(
+                state_input,
+                _):
             """lax.scan compatible step transition in jax env."""
             obs, state, key, cum_reward, valid_mask = state_input
 
@@ -163,14 +191,14 @@ class Environment():
             #if self.model_forward is not None:
             #    action = self.model_forward(policy_params, obs, rng_net)
             #else:
-            scripted_action, leader = script(state, self.n_scripted)
-            joint_action = self.action_space.sample(act_key, samples=self.n_agents)
-            action = jnp.concatenate([scripted_action,joint_action])
-
+            scripted_action, leader = script(state)
+            #joint_action = self.action_space.sample(act_key, samples=self.n_agents+self.n_scripted)
+            action = scripted_action
             # Step the environment as normally.
-            (next_obs, next_state, reward, done) = self.step(state, action, leader)
+            (next_obs, next_state, reward, done) = self.step(state, action)
             new_cum_reward = cum_reward + reward * valid_mask
             new_valid_mask = valid_mask * (1 - done)
+
             carry = [
                 next_obs,
                 next_state,
@@ -193,32 +221,42 @@ class Environment():
                 jnp.array([1.0]),
             ],
             (),
-            self.params["settings"]["episode_size"],
+            self.params["settings"]['episode_size'],
         )
         # Return the sum of rewards accumulated by agent in episode rollout
         obs, action, reward, next_obs, done = scan_out
         cum_return = carry_out[-2]
-        
         return obs, action, reward, next_obs, done, cum_return
     
-    
-    
-    @eqx.filter_jit
-    def step(self, state:EnvState, action, leader):
+    def step(
+            self,
+            state: EnvState,
+            action: chex.Array) -> Tuple[Sequence[chex.Array], EnvState, chex.Array, chex.Array]:
+        """Performs one step in the environment
+
+        `Args`:
+            - `state (EnvState)`: State of the environment
+            - `action (chex.Array)`: The joint action fro the agents and scripted entities.
+
+        Returns:
+            - `environment_step Tuple[Sequence[chex.Array], EnvState, chex.Array, chex.Array])`: A step in the environment.
+        """
         X_ddot = action
         dt=1/60
         X_dot = state.X_dot + dt * X_ddot
         X = state.X + 60*dt*X_dot/la.norm(X_dot, axis=1)[:,None]
         X = jnp.clip(X,a_min=0,a_max=800)
 
-        t = state.t+dt
-        state = EnvState(X, X_dot, leader, state.goal, t)
+        state = EnvState(X, X_dot, 1, state.goal) #type: ignore
+
         obs = self.get_obs(state)
         reward = jnp.array([1.0])
         
-        terminated = jnp.array([0.0])
+        norm_e = la.norm(state.goal-X[1])
 
-        return (obs, state, reward, terminated)
+        done = lax.select(norm_e<5, jnp.array([1.0]), jnp.array([0.0]))
+
+        return (obs, state, reward, done)
     
     def __repr__(self):
         return f"{__class__.__name__}: {str(self.__dict__)}"

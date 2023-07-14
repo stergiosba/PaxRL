@@ -26,22 +26,3 @@ class AgentState(EntityState):
     def __repr__(self):
         return f"{__class__.__name__}: {str(self.__dict__)}"
     
-    
-class EnvState(eqx.Module):
-    """The environment state (Multiple Agents)
-
-    `Args`:
-        - `X (chex.Array)`: Position of every Agents.
-        - `X_dot (chex.Array)`: Velocity of every Agent.
-        - `leader (int)`: The id of the leader agent.
-        - `goal (chex.Array)`: The location of the goal.
-        - `t (float)`: Time step.
-    """
-    X: chex.Array
-    X_dot: chex.Array
-    leader: int
-    goal: chex.Array
-    t: float
-    
-    def __repr__(self):
-        return f"{__class__.__name__}: {str(self.__dict__)}"

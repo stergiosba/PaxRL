@@ -3,7 +3,7 @@ import pyglet as pg
 import numpy as np
 from pax.render.utils import VisualEntity
 
-def reset(env, env_id, P, L, G, batch):
+def reset(env, P, L, G, batch, env_id=0):
     ScriptedEntities = []
     for i in range(env.n_scripted):
         if i==L[env_id,0]:
@@ -18,7 +18,7 @@ def reset(env, env_id, P, L, G, batch):
     Agents = []
     for i in range(env.n_scripted, env.n_scripted+env.n_agents):
         agent = VisualEntity(id=i, x=P[env_id,0,0,i,0],y=P[env_id,0,0,i,1],\
-                radius=10, neighborhood_radius=120, color=(0,0,0,155), batch=batch)
+                radius=10, neighborhood_radius=90, color=(0,0,0,155), batch=batch)
         Agents.append(agent)
 
     goal_boss = pg.shapes.Star(x=G[env_id,0,0],y=G[env_id,0,1], \
@@ -52,7 +52,7 @@ def render(env, O, render_mode=None, save=0):
         
         t=[0]
         env_id = [0]
-        ScriptedEntities, Agents, goal  = reset(env, env_id[0], P, L, G, batch)
+        ScriptedEntities, Agents, goal  = reset(env, P, L, G, batch, env_id[0])
         
         @window.event
         def on_key_press(symbol, mods):
@@ -68,14 +68,14 @@ def render(env, O, render_mode=None, save=0):
                 env_id[0]+=1
                 if env_id[0] > env.params["parallel"]["n_env"]-1:
                     env_id[0] = env.params["parallel"]["n_env"]-1
-                ScriptedEntities, Agents, goal = reset(env, env_id[0], P, L, G, batch)
+                ScriptedEntities, Agents, goal = reset(env, P, L, G, batch, env_id[0])
                 
             if symbol==pg.window.key.DOWN:
                 batch = pg.graphics.Batch()
                 env_id[0]-=1
                 if env_id[0] < 0:
                     env_id[0] = 0
-                ScriptedEntities, Agents, goal = reset(env, env_id[0], P, L, G, batch)
+                ScriptedEntities, Agents, goal = reset(env, P, L, G, batch, env_id[0])
                 
             if symbol==pg.window.key.P:
                 window.simulationClock.unschedule(update)

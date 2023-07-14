@@ -1,4 +1,4 @@
-from tests.test import run_test_1
+from tests.test import run_test
 import argparse
 print("\n \
 *****************************************************\n \
@@ -28,10 +28,11 @@ parser = argparse.ArgumentParser(
 render_mode = parser.add_argument('-r', '--render', type=str, dest="render", help='Choose render mode (Options: Human)')
 device = parser.add_argument('-d', '--device', type=str, default="cpu", dest="device", help='Choose a device (Default: cpu) - (Options: cpu/gpu)')
 
+test = parser.add_argument('-t', '--test', type=str, default=1, dest="test", help='Choose a test (Default: 1)')
+
 # Currently profile does not work due to a bug in CUDA 12.1 https://github.com/google/jax/issues/15384
 profile = parser.add_argument('-p', '--profile', type=str, default="", dest="profile", help='Choose if code is profiled by specifying a directory')
 parser.print_help()
 args = parser.parse_args()
-print(args.device)
 
-run_test_1(args)
+run_test(args)

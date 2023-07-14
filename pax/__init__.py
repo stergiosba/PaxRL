@@ -1,7 +1,11 @@
-from pax.core.environment import Environment
 import tomli
+from typing import Dict, Tuple
+from pax.core.environment import Environment
 
-def make(env_name)-> Environment:
-    with open(env_name+".toml",mode="rb") as tomlfile:
-        env_params = tomli.load(tomlfile)
-    return Environment(env_params)
+
+def make(env_name: str)-> Tuple[Environment, Dict]:
+
+    with open(f"{env_name}.toml",mode="rb") as config_file:
+        config = tomli.load(config_file)
+        
+    return (Environment(config), config) #type: ignore

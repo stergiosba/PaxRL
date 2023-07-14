@@ -1,23 +1,17 @@
+#%%
+import jax.nn as jnn
+import jax.random as jrandom
+import jax.numpy as jnp
+
+key = jrandom.key(1)
+
+logits = jnp.array([.00001, 59, .00001])
 # %%
-import pyglet as pg
-
-frames = []
-
-for i in range(1,398):
-    frames.append(pg.resource.image(f"saved/screenshot_frame_{i}.png"))
-
-window = pg.window.Window(800,800, caption="HORC")
-ani = pg.image.Animation.from_image_sequence(frames, duration=1/60, loop=True)
-sprite = pg.sprite.Sprite(ani)
-
-@window.event
-def on_key_press(symbol, mods):
-    if symbol==pg.window.key.Q:
-        window.on_close()
-
-@window.event
-def on_draw():
-    window.clear()
-    sprite.draw()
-
-pg.app.run()
+samples = 5999
+sums=0
+for _ in range(samples):
+    s = jrandom.categorical(key,logits=logits)
+    key, _ = jrandom.split(key, 2)
+    if s==0 or s==2:
+        sums+=1
+# %%
