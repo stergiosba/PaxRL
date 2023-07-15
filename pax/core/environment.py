@@ -54,6 +54,7 @@ class Environment(eqx.Module):
         """
         Args:
            `params (Dict)`: Parameters given to environment from the TOML file.
+           `params (Dict)`: Parameters given to environment from the TOML file.
         """
         self.params = params
         self.n_agents = self.params["scenario"]["n_agents"]
