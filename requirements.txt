@@ -1,0 +1,11 @@
+chex==0.1.81
+equinox==0.10.11
+flax==0.7.0
+jaxlib==0.4.13
+jax==0.4.13
+numpy==1.25.0
+optax==0.1.5
+pyglet==2.0.8
+scipy==1.11.1
+tomli==2.0.1
+tqdm==4.65.0
