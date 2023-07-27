@@ -1,6 +1,6 @@
 DEVICE=$1
-echo "No device was specified, defaulting to cpu"
 if [ -z $DEVICE ]; then
+	echo "No device was specified, defaulting to cpu"
     DEVICE="cpu"
 else
     DEVICE=$1
