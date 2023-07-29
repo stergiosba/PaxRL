@@ -3,7 +3,7 @@ import jax.numpy.linalg as la
 from jax import jit, numpy as jnp, nn as jnn
 from typing import Tuple
 from jax.debug import print as dprint
-#from pax.core.environment import EnvState
+from pax.core.state import EnvState
 
 @jit
 def distance_tensor_jax(X:chex.Array) -> chex.Array:
@@ -16,8 +16,8 @@ def distance_tensor_jax(X:chex.Array) -> chex.Array:
     Returns:
         `Distance_matrix (chex.Array)`: Distance tensor of shape: (n_envs,n_agents,n_agents)
     """  
-    
-    return jnp.einsum('ijkl->ijk',(X[:,None, ...]-X[...,None,:]) **2)
+    diff_tensor = (X[:,None, ...]-X[...,None,:])
+    return jnp.einsum('ijkl->ijk',diff_tensor**2), diff_tensor
 
 @jit
 def leader_neighbors(
@@ -33,12 +33,10 @@ def leader_neighbors(
     Returns:
         - `leader_neighbors_matrix (chex.Array)`: Boolean matrix of leader's neighbors for each environment.
     """
-    n_env, n, _ = distance_tensor.shape
-    leader_OH = jnn.one_hot(leader, n)
-    leader_distances = (leader_OH@distance_tensor)[jnp.arange(n_env), 0]
-    leader_neighbors_matrix = ((leader_distances>0)&(leader_distances<=(leader_radius)**2)).astype(int)
-    leader_neighbors_matrix = leader_neighbors_matrix.at[:,-1].set(jnp.array(0))
-
+    n_env, _, _ = distance_tensor.shape
+    leader_distances = distance_tensor[jnp.arange(n_env),leader,:]
+    leader_neighbors_matrix = ((leader_distances>0)&(leader_distances<=(leader_radius)**2))#.astype(int)
+    
     return leader_neighbors_matrix
 
 @jit
@@ -54,10 +52,8 @@ def prober_neighbors(
     Returns:
         - `leader_neighbors_matrix (chex.Array)`: Boolean matrix of leader's neighbors for each environment.
     """
-    n_env, n, _ = distance_tensor.shape
-    prober_OH = jnn.one_hot((n-1)*jnp.ones(n_env), n)
-    prober_distances = (prober_OH@distance_tensor)[jnp.arange(n_env), 0]
-    prober_neighbors_matrix = ((prober_distances>0)&(prober_distances<=(prober_radius)**2)).astype(int)
+    prober_distances = distance_tensor[...,-1]
+    prober_neighbors_matrix = ((prober_distances>0)&(prober_distances<=(prober_radius)**2))#.astype(int)
 
     return prober_neighbors_matrix
 
@@ -76,13 +72,7 @@ def neighbors(
         - `neighbors_tensor (chex.Array)`: Tensor of neighbors for every agent and every environment.
         - `neighbors_count (chex.Array)`: Agent-wise sum of neighbors_tensor, i.e. cardinality of each neighborhood. 
     """
-    _, n, _ = distance_tensor.shape
-    neighbors_tensor = ((distance_tensor>0)&(distance_tensor<=agent_radius**2)).astype(int)
-
-    # Its faster to do prober whitening here and use jax.jit rather than breaking the array
-    # and doing eqx.filter_jax.
-    neighbors_tensor = neighbors_tensor.at[...,-1].set(jnp.zeros(n, dtype=int))
-    neighbors_tensor = neighbors_tensor.at[:,-1].set(jnp.zeros(n, dtype=int))
+    neighbors_tensor = ((distance_tensor>0)&(distance_tensor<=agent_radius**2))#.astype(int)
     
     # Calculating all neighbors counts, Summing over the agents axis: 1.
     neighbors_count = jnp.sum(neighbors_tensor, axis=1)
@@ -91,12 +81,12 @@ def neighbors(
 
 @jit
 def total_influence(
-    X,
-    X_dot,
-    neighbors_matrix,
-    leader_neighbors_matrix,
-    leader,
-    leader_str):
+    X:chex.Array,
+    X_dot:chex.Array,
+    neighbors_matrix:chex.Array,
+    leader_neighbors_matrix:chex.Array,
+    leader:chex.Array,
+    leader_str:float):
     """Calculates the influence of simple agents and then of the leader agent.
 
     Args:
@@ -109,18 +99,21 @@ def total_influence(
     Returns:
         - `chex.Array`: _description_
     """
+    n_env, _, _ = X.shape
     K = jnp.vstack([[X],[X_dot]])
 
     neight_inf = neighbors_matrix@K
-    leader_inf = leader_str*leader_neighbors_matrix[:,None]*(K[:,leader][:,None])
+    leader_inf = leader_str*jnp.einsum("ij,kil->kijl",leader_neighbors_matrix,K[:,jnp.arange(n_env),leader,:])
 
-    return neight_inf+leader_inf
+    total_inf = neight_inf+leader_inf
+    total_inf = total_inf.at[...,-1,:].set(jnp.array(0))
+    return total_inf
 
 @jit
 def mixed_steer(
         X: chex.Array,
         X_dot: chex.Array,
-        leader:int,
+        leader: chex.Array,
         total_inf: chex.Array,
         total_count: chex.Array) -> Tuple[chex.Array, chex.Array]:
     """ Cohesion and alignment calculations of `Rax`: Leader modified Reynolds flocking model in Jax.
@@ -138,23 +131,32 @@ def mixed_steer(
     
     # Small epsilon to avoid division by zero
     eps = 10**-7
+    n_env, _, _ = X.shape
+    T = total_inf/(total_count[...,None]+eps)
 
-    # Cohesion steer calculation
-    cohesion = (total_inf[0])/(total_count[:,None]+eps)-X
-
-    alignment = (total_inf[1])/(total_count[:,None]+eps)
-    
     max_speed = 20
-    cohesion = max_speed*(cohesion/la.norm(cohesion+eps, axis=1)[:,None]) - X_dot
-    alignment = max_speed*(alignment/la.norm(alignment+eps, axis=1)[:,None]) - X_dot
+    # Cohesion steer calculation
+    coh = T[0]-X
+    coh = max_speed*(coh/(la.norm(coh+eps, axis=-1)[...,None])) - X_dot
 
-    # Leader whitening (i.e. the leader is not affected by anyone.)
-    cohesion = cohesion.at[leader].set(jnp.array([0,0]))
-    alignment = alignment.at[leader].set(jnp.array([0,0]))
+    # Alignment steer calculations
+    alig = T[1]
+    alig = max_speed*(alig/(la.norm(alig+eps, axis=-1)[...,None])) - X_dot
     
     max_force = 40
-    return (max_force*(cohesion/la.norm(cohesion+eps, axis=1)[:,None]),
-            max_force*(alignment/la.norm(alignment+eps, axis=1)[:,None]))
+    coh = max_force*(coh/la.norm(coh+eps, axis=-1)[...,None])
+    alig = max_force*(alig/la.norm(alig+eps, axis=-1)[...,None])
+    
+
+    # Leader whitening (i.e. the leader is not affected by anyone.)
+    coh = coh.at[jnp.arange(n_env),leader,:].set(jnp.array([0,0]))
+    alig = alig.at[jnp.arange(n_env),leader,:].set(jnp.array([0,0]))
+    
+    # Its faster to do prober whitening here because it's constant time.
+    coh = coh.at[...,-1,:].set(jnp.array([0,0]))
+    alig = alig.at[...,-1,:].set(jnp.array([0,0]))
+    
+    return coh, alig
 
 @jit
 def separation_steer(
@@ -181,16 +183,17 @@ def separation_steer(
     
     # Separation steer calculation
     max_speed = 20
-    separation = jnp.einsum('ij,jk->jk',scaled_neighbors_matrix,X) - scaled_neighbors_matrix@X
-    separation = max_speed*(separation/(la.norm(separation+eps, axis=1)[:,None])) - X_dot
+    sep = jnp.einsum('ijk,ijl->ijl', scaled_neighbors_matrix, X) - scaled_neighbors_matrix@X
+    sep = max_speed*(sep/(la.norm(sep+eps, axis=-1)[...,None])) - X_dot
 
     max_force = 40
-    separation = max_force*(separation/(la.norm(separation+eps, axis=1)[:,None]))
-    return separation
+    sep = max_force*(sep/(la.norm(sep+eps, axis=-1)[...,None]))
+    
+    return sep
 
 @jit
 def interaction_steer(
-        X: chex.Array,
+        Diff: chex.Array,
         corr_dist_mat: chex.Array) -> chex.Array:
     """Separation calculations of `Rax`: Leader modified Reynolds flocking model in Jax.
 
@@ -209,9 +212,9 @@ def interaction_steer(
 
     max_force = 75
     
-    interaction = (X-X[-1])/(corr_dist_mat[:,-1][:,None])
+    interaction = Diff[:,-1]/(corr_dist_mat[...,-1][...,None])
 
-    return max_force*(interaction/(la.norm(interaction+eps, axis=1)[:,None]))
+    return max_force*(interaction/(la.norm(interaction+eps, axis=-1)[...,None]))
 
 @jit
 def reynolds_jax(leader: int, X: chex.Array, X_dot: chex.Array) -> Tuple[chex.Array, int]:
@@ -232,17 +235,17 @@ def reynolds_jax(leader: int, X: chex.Array, X_dot: chex.Array) -> Tuple[chex.Ar
     
     # The distance tensor, contains distance matrices for each separate environment. We calculate everything in parallel
     # for all environments.
-    T_d = distance_tensor_jax(X)
+    T_d, T_diff = distance_tensor_jax(X)
     
-    # The main diagonal of a distance matrix is 0 since d(1,1) is the distance of agent 1 from itself
-    # Therefore when we divide by the distances we would get 1/0. Adding the ones matrix scaled down to eps
+    # The main diagonal of a distance matrix is 0 since d(i,i) is the distance of agent i from itself.
+    # Therefore if we divide by the distances we would get 1/0. Adding ones matrix scaled down to eps
     # makes the algorithm stable. The identity matrix could also be used but there are cases where two agents
-    # occupy the same space and then it blows up ot NaN. In reality the agents need some form of real collision
-    # avoidance but this would make the simulation run slower. Also this happens because agents are in box and they
-    # do not bounce of the wall.
+    # Occupy the same space because after sometime the agents reach the walls of the box and they do not bounce off of it
+    # This cause NaNs. 
+    # In reality the agents need some form of real collision avoidance but this would make the simulation run slower. 
     n_env, n, _ = X.shape
     eps = 10**-7
-    T_d_corr = T_d + eps*jnp.ones([n_env,n,n])
+    T_d_corr = T_d + eps*jnp.ones([n_env, n, n])
 
     agent_radius = 30
     ldr_radius = 4*agent_radius
@@ -276,17 +279,19 @@ def reynolds_jax(leader: int, X: chex.Array, X_dot: chex.Array) -> Tuple[chex.Ar
     separation =  separation_steer(X, X_dot, T_d_corr, T_nbr)
 
     # Prober interaction.
-    interaction = interaction_steer(X, T_d_corr)
+    interaction = interaction_steer(T_diff, T_d_corr)
 
     # Performs neighbors masking.
-    total_mask = (total_count>0)[:,None]
-    neighbors_mask = (C_nbr>0)[:,None]
-    probed_mask = T_prb[:,None]
-    w_c = 0.4
+    #total_mask = (total_count>0)[:,None]
+    #neighbors_mask = (C_nbr>0)[:,None]
+    #probed_mask = T_prb[:,None]
+    w_c = 0.2
     w_a = 1
     w_s = 1.2
+    steer = w_c*cohesion+ w_a*alignment + w_s*separation #+ interaction
+    steer = steer.at[...,-1,:].set(jnp.array([0,0]))
 
-    return (total_mask*(w_c*cohesion+ w_a*alignment) + neighbors_mask*w_s*separation + 0*probed_mask*interaction), leader
+    return steer# + 0*probed_mask*interaction), leader
 
 
 @jit
@@ -299,14 +304,15 @@ def script(state, *args) -> Tuple[chex.Array, int]:
     `Returns`:
         - `steer` (chex.Array): The steer vector of swarm agents shape=(n,2).
     """
-    S, leader = reynolds_jax(state.leader, state.X, state.X_dot)
-
-    e = state.goal-state.X[leader]
-    Kp = 0
+    S = reynolds_jax(state.leader, state.X, state.X_dot)
+    e = state.goal-state.X[jnp.arange(30), state.leader]
+    #dprint("{x}",x=state.goal)
+    Kp = 0.2
     u = Kp*e
-    #dprint("{x}",x=S[leader])
-    S = S.at[leader].set(S[leader]+u)
+    S = S.at[jnp.arange(30),state.leader].set(S[jnp.arange(30),state.leader]+u)
     #dprint("{x}\n---",x=la.norm(state.X_dot[leader]))
     #S = S.at[-1].set(jnp.zeros(2))
 
-    return S, leader
+    #dprint("{x}",x=S)
+    return S
+

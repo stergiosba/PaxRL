@@ -6,27 +6,10 @@ import jax.numpy.linalg as la
 from typing import Sequence, Union, Tuple, Sequence, Any, Dict
 from jax import jit, vmap, lax, devices, debug
 from pax.core.spaces import *
-from pax.core.script_inter import script
+from pax.scenarios.script_inter import script
 from jax.debug import print as dprint  #type: ignore
+from pax.core.state import EnvState
 
-class EnvState(eqx.Module):
-    """The environment state (Multiple Agents)
-
-    `Args`:
-        - `X (chex.Array)`: Position of every Agents.
-        - `X_dot (chex.Array)`: Velocity of every Agent.
-        - `leader (int)`: The id of the leader agent.
-        - `goal (chex.Array)`: The location of the goal.
-    """
-    X: chex.Array
-    X_dot: chex.Array
-    leader: chex.Array
-    goal: chex.Array
-    
-    def __repr__(self):
-        return f"{__class__.__name__}: {str(self.__dict__)}"
-     
-    
 class Environment(eqx.Module):
     """The main `Pax` class.
         It encapsulates an environment with arbitrary dynamics. 

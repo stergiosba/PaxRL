@@ -6,7 +6,7 @@ import numpy as np
 from typing import Tuple
 from jax.debug import print as dprint
 from jax import jit, lax
-#from pax.core.environment import EnvState
+from pax.core.state import EnvState
 
 @jit
 def distance_matrix_jax(X:chex.Array) -> chex.Array:
@@ -126,7 +126,7 @@ def mixed_steer(
     
     # Small epsilon to avoid division by zero
     eps = 10**-7
-   
+
     # Cohesion steer calculation
     cohesion = (total_inf[0])/(total_count[:,None]+eps)-X
 

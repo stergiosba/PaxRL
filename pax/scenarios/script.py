@@ -6,7 +6,7 @@ import numpy as np
 from typing import Tuple
 from jax.debug import print as dprint
 from jax import jit, lax
-from pax.core.environment import EnvState
+from pax.core.state import EnvState
 
 @jit
 def distance_matrix_jax(X:chex.Array) -> chex.Array:
