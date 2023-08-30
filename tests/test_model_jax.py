@@ -1,13 +1,13 @@
-#%%
+#%%  
 from jax.debug import print as dprint
-import numpy.linalg as la
-import numpy as np
+import jax.numpy.linalg as la
+import jax.numpy as jnp
 from jax import jit, lax, random, vmap
 import timeit
 import jax
 
 
-
+@jit
 def distance_matrix_jax(X):
     """Calculates the euclidean distances between all pairs of swarm agents.
 
@@ -18,8 +18,9 @@ def distance_matrix_jax(X):
         `Distance_matrix ()`: Distance matrix of shape:(n,n)
     """  
     
-    return np.sum((X[:, None, :] - X[None, :, :]) ** 2, axis=-1)
+    return jnp.sum((X[:, None, :] - X[None, :, :]) ** 2, axis=-1)
 
+@jit
 def neighbors(
         distance_matrix,
         agent_radius: float):
@@ -34,11 +35,11 @@ def neighbors(
     """
     
     neighbors_matrix = ((distance_matrix>0)&(distance_matrix<=agent_radius**2)).astype(int) 
-    neighbors_count = np.sum(neighbors_matrix, axis=0)
+    neighbors_count = jnp.sum(neighbors_matrix, axis=0)
     
     return neighbors_matrix, neighbors_count
 
-
+@jit
 def neighbors_influence(
     A,
     neighbors_matrix):
@@ -53,10 +54,10 @@ def neighbors_influence(
         - ``: _description_
     """
         
-    return np.sum(neighbors_matrix[:,:,None]*A, axis=-2)
+    return jnp.sum(neighbors_matrix[:,:,None]*A, axis=-2)
 
     
-
+@jit
 def cohesion_steer(
         X,
         X_dot,
@@ -93,13 +94,13 @@ def cohesion_steer(
     cohesion = max_speed*(cohesion/la.norm(cohesion+eps, axis=1)[:,None]) - X_dot
 
     # Leader whitening (i.e. the leader is not affected by anyone.)
-    #cohesion = cohesion.at[leader_id].set(np.array([0,0]))
+    #cohesion = cohesion.at[leader_id].set(jnp.array([0,0]))
     
     max_force = 20
     return max_force*(cohesion/la.norm(cohesion+eps, axis=1)[:,None])
 
 
-
+@jit
 def alignment_steer(
         X_dot, 
         neighbors_matrix,
@@ -132,14 +133,14 @@ def alignment_steer(
     alignment = max_speed*(alignment/la.norm(alignment+eps, axis=1)[:,None]) - X_dot
 
     # Leader whitening (i.e. the leader is not affected by anyone.)
-    #alignment = alignment.at[leader_id].set(np.array([0,0]))
+    #alignment = alignment.at[leader_id].set(jnp.array([0,0]))
     
     max_force = 20
     return max_force*(alignment/la.norm(alignment+eps, axis=1)[:,None])
 
 
 
-
+@jit
 def separation_steer(
         X,
         X_dot, 
@@ -164,13 +165,13 @@ def separation_steer(
     # The main diagonal of a distance matrix is 0 since d(1,1) is the distance of agent 1 from itself
     # Therefore when we divide by the distances we would get 1/0. Notice that adding the identity matrix
     # will not change the separation calculations for other distance pairs as we only add one in the diagonal elements.
-    adj_dist_mat = dist_mat+np.eye(n)
+    adj_dist_mat = dist_mat+jnp.eye(n)
     
     scaled_neighbors_matrix = neighbors_matrix/adj_dist_mat
     
     # Separation steer calculation
     max_speed = 10
-    separation = np.sum(scaled_neighbors_matrix,axis=1)[:,None]*X - scaled_neighbors_matrix@X
+    separation = jnp.sum(scaled_neighbors_matrix,axis=1)[:,None]*X - scaled_neighbors_matrix@X
     separation = max_speed*(separation/(la.norm(separation+eps, axis=1)[:,None])) - X_dot
     
     max_force = 20
@@ -201,7 +202,7 @@ def reynolds_jax(X, X_dot):
     neighbors_matrix, neighbors_count = neighbors(distance_matrix, agent_radius)
     
     # For dynamic leader allocation. Later work.
-    #leader = np.argmax(neighbors_count, axis=0)
+    #leader = jnp.argmax(neighbors_count, axis=0)
     
     # Calculate the total number of neighbors for each agent.
     total_count = neighbors_count
@@ -223,9 +224,9 @@ def reynolds_jax(X, X_dot):
 
 def test(X,X_dot):
     for i in range(1000):
-        d = reynolds_jax(X, X_dot)
-        X = X+d
-
+        d = reynolds_jax(X, X_dot).block_until_ready()
+    
+    X = X+d
     return d
 
 # %%
@@ -236,7 +237,7 @@ key_v = random.PRNGKey(n*m-32)
 X = random.uniform(key,shape=(n,2))*1
 X_dot = random.uniform(key_v,shape=(n,2))*1
 
-#reynolds_jax.lower(X,X_dot).compile()
+reynolds_jax.lower(X,X_dot).compile()
 #%%
 with jax.profiler.trace("/tmp/jax-trace4", create_perfetto_link=True):
     for i in range(m):
@@ -244,16 +245,21 @@ with jax.profiler.trace("/tmp/jax-trace4", create_perfetto_link=True):
 x = x+1
 
 #%%
-
-for n in range(1,501,10):
+m=3
+TT=[]
+for n in range(1,1601,100):
     key = random.PRNGKey(n)
     key_v = random.PRNGKey(n*m-32)
-    X = np.array(random.uniform(key,shape=(n,2)))*800
-    X_dot = np.array(random.uniform(key_v,shape=(n,2)))*3
+    X = jnp.array(random.uniform(key,shape=(n,2)))*800
+    X_dot = jnp.array(random.uniform(key_v,shape=(n,2)))*3
     #x = test(X,X_dot).block_until_ready()
     #x=single_rollout(key,X,X_dot).block_until_ready()
     #t=(timeit.timeit("single_rollout(key,X,X_dot).block_until_ready()", setup="from __main__ import single_rollout,key,X,X_dot",number=m)/m)
     t=(timeit.timeit("test(X,X_dot)", setup="from __main__ import test,X,X_dot",number=m)/m)
     #TT.append(t)
-    #x+=1
     print(f"{n}, {t}")
+
+with jax.profiler.trace("/tmp/jax-trace4", create_perfetto_link=True):
+    for i in range(m):
+        x = test(X, X_dot)
+# %%

@@ -2,6 +2,7 @@ import equinox as eqx
 import optax
 from pax import make
 from pax.core.environment import Environment
+from pax.scenarios.rax import script
 import jax
 import jax.numpy as jnp
 import jax.random as jrandom
@@ -10,6 +11,7 @@ from collections import defaultdict
 import chex
 import numpy as np
 import tqdm
+from jax.debug import print as dprint  #type: ignore
 
 # should this be eqx
 class RolloutManager(object):
@@ -52,8 +54,38 @@ class RolloutManager(object):
             action):
         return jax.vmap(self.env.step, in_axes=(0, 0))(
             state, action)
+    
+    def batch_evaluate_loopy(
+            self,
+            key_input,
+            num_envs):
+        key_rst, key_ep = jax.random.split(key_input)
+        O = []
+        obs, state = self.batch_reset(jax.random.split(key_rst, num_envs))
+        O.append(obs[0])
+        cum_re = jnp.array(num_envs * [0.0])[:,None]
+        valid_mask = jnp.array(num_envs * [1.0])[:,None]
 
-    @eqx.filter_jit
+        m = self.env.params["scenario"]['episode_size']
+
+        for episode_step in range(m):
+            key, key_step, key_net = jax.random.split(key_ep, 3)
+            #action, _, _, key = self.select_action(obs, key_net)
+            action = script(state)
+            #action  = self.random_action(num_envs, key_net)
+            obs, state, reward, done = self.batch_step(
+                state,
+                action,
+            )
+            cum_re = cum_re + reward * valid_mask
+            valid_mask = valid_mask * (1 - done)
+            O.append(obs[0])
+
+
+        return jnp.array(O), action, jnp.mean(cum_re)
+
+
+    #@eqx.filter_jit
     def batch_evaluate(
             self,
             key_input,
@@ -68,7 +100,8 @@ class RolloutManager(object):
             obs, state, key, cum_reward, valid_mask = state_input
             key, key_step, key_net = jax.random.split(key, 3)
             #action, _, _, key = self.select_action(obs, key_net)
-            action  = self.random_action(num_envs, key_net)
+            action = script(state)
+            #action  = self.random_action(num_envs, key_net)
             next_o, next_s, reward, done = self.batch_step(
                 state,
                 action,

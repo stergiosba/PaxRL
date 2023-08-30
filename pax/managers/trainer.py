@@ -24,8 +24,8 @@ class Trainer():
                                  state_space)
         '''
 
-    def __call__(self, keys):
-        obs, state = self.r_manager.batch_reset(keys)
-
-        obs,act,batch_reward = self.r_manager.batch_evaluate(keys[0], self.env.params["settings"]["n_env"],)
+    def __call__(self, key):
+        # Run a rollout for a batch of environments
+        obs, act, batch_reward = self.r_manager.batch_evaluate(key, self.env.params["settings"]["n_env"])
+        
         return (obs,act,batch_reward)

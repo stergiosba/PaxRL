@@ -287,7 +287,7 @@ def reynolds_jax(leader: int, X: chex.Array, X_dot: chex.Array) -> Tuple[chex.Ar
     #probed_mask = T_prb[:,None]
     w_c = 0.2
     w_a = 1
-    w_s = 1.2
+    w_s = 1
     steer = w_c*cohesion+ w_a*alignment + w_s*separation #+ interaction
     steer = steer.at[...,-1,:].set(jnp.array([0,0]))
 
@@ -305,14 +305,14 @@ def script(state, *args) -> Tuple[chex.Array, int]:
         - `steer` (chex.Array): The steer vector of swarm agents shape=(n,2).
     """
     S = reynolds_jax(state.leader, state.X, state.X_dot)
-    e = state.goal-state.X[jnp.arange(30), state.leader]
-    #dprint("{x}",x=state.goal)
-    Kp = 0.2
+
+    n_env, _, _ = state.X.shape
+    e = state.goal-state.X[jnp.arange(n_env), state.leader]
+    Kp = 0.3
     u = Kp*e
-    S = S.at[jnp.arange(30),state.leader].set(S[jnp.arange(30),state.leader]+u)
+    S = S.at[jnp.arange(n_env),state.leader].set(S[jnp.arange(n_env),state.leader]+u)
     #dprint("{x}\n---",x=la.norm(state.X_dot[leader]))
     #S = S.at[-1].set(jnp.zeros(2))
 
     #dprint("{x}",x=S)
     return S
-

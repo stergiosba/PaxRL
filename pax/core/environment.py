@@ -6,7 +6,8 @@ import jax.numpy.linalg as la
 from typing import Sequence, Union, Tuple, Sequence, Any, Dict
 from jax import jit, vmap, lax, devices, debug
 from pax.core.spaces import *
-from pax.scenarios.script_inter import script
+#from pax.scenarios.script_inter import script
+from pax.scenarios.rax import script
 from jax.debug import print as dprint  #type: ignore
 from pax.core.state import EnvState
 
@@ -24,7 +25,7 @@ class Environment(eqx.Module):
         
     """
     
-    # TODO: Refactor in the future so that the environment is separate from the scenario
+    # TODO: Refactor so the environment is separate from the scenario
     n_agents: int
     n_scripted: int
     action_space: Union[Discrete, MultiDiscrete, Box]
@@ -105,10 +106,9 @@ class Environment(eqx.Module):
         leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted-1)
 
         goal = jrandom.uniform(
-            key, minval=0, maxval=800, \
+            key, minval=100, maxval=700, \
             shape=(2,)
             )
-
 
         state = EnvState(
             X=jnp.concatenate([init_X_scripted,
@@ -119,98 +119,6 @@ class Environment(eqx.Module):
             goal = goal
         )
         return (self.get_obs(state), state) #type: ignore
-    
-    @eqx.filter_jit
-    def batch_step(
-            self,
-            state,
-            action):
-        return vmap(self.step, in_axes=(0, 0))(state, action)
-    
-    def batch_rollout(
-            self,
-            keys: jrandom.PRNGKeyArray) -> Sequence[chex.Array]:
-        """Produces a batch rollout of an environment. Vectorized mapping over an array of keys.
-
-        Args:
-            keys (jrandom.KeyArray): A matrix of PRNG keys to map over.
-
-        Returns:
-            (chex.Array): The batched rollouts for as many environment as the number of keys.
-        """
-        batch_rollout = vmap(self.single_rollout, in_axes=(0))
-        return batch_rollout(keys)
-    
-    @eqx.filter_jit
-    def single_rollout(
-            self,
-            key: chex.PRNGKey) -> Tuple[chex.Array,chex.Array,chex.Array,
-                                        chex.Array,chex.Array,chex.Array]:#, policy_params):
-        """
-        Efficient rollout of a singe environment episode with lax.scan.
-
-        Args:
-            `self` (Environment): The environment instance
-            `key` (chex.PRNGKey): The PRNG key that determines the rollout of the episode
-
-        Returns:
-            - `obs` (chex.Array): The observations collected from the episode.
-            - `action` (chex.Array): The actions collected from the episode.
-            - `reward` (chex.Array): The rewards collected from the episode.
-            - `next_obs` (chex.Array): The next observation,
-            - `done` (chex.Array): Done flag,
-            - `cum_return` (chex.Array): Summation of the rewards collected over the episode.
-        """
-        
-        # Reset the environment
-        (obs, state) = self.reset(key)
-
-        def policy_step(
-                state_input,
-                _):
-            """lax.scan compatible step transition in jax env."""
-            obs, state, key, cum_reward, valid_mask = state_input
-
-            key, act_key, obs_key = jrandom.split(key, 3)
-            #if self.model_forward is not None:
-            #    action = self.model_forward(policy_params, obs, rng_net)
-            #else:
-            scripted_action, leader = script(state)
-            #joint_action = self.action_space.sample(act_key, samples=self.n_agents+self.n_scripted)
-            action = scripted_action
-            # Step the environment as normally.
-            (next_obs, next_state, reward, done) = self.step(state, action)
-            new_cum_reward = cum_reward + reward * valid_mask
-            new_valid_mask = valid_mask * (1 - done)
-
-            carry = [
-                next_obs,
-                next_state,
-                key,
-                new_cum_reward,
-                new_valid_mask,
-            ]
-            y = [obs, action, reward, next_obs, done]
-            
-            return carry, y
-
-        # Scan over episode step loop
-        carry_out, scan_out = lax.scan(
-            policy_step,
-            [
-                obs,
-                state,
-                key,
-                jnp.array([0.0]),
-                jnp.array([1.0]),
-            ],
-            (),
-            self.params["settings"]['episode_size'],
-        )
-        # Return the sum of rewards accumulated by agent in episode rollout
-        obs, action, reward, next_obs, done = scan_out
-        cum_return = carry_out[-2]
-        return obs, action, reward, next_obs, done, cum_return
     
     def step(
             self,
@@ -231,7 +139,7 @@ class Environment(eqx.Module):
         X = state.X + 60*dt*X_dot/la.norm(X_dot, axis=1)[:,None]
         X = jnp.clip(X,a_min=0,a_max=800)
 
-        state = EnvState(X, X_dot, 1, state.goal) #type: ignore
+        state = EnvState(X, X_dot, state.leader, state.goal) #type: ignore
 
         obs = self.get_obs(state)
         reward = jnp.array([1.0])

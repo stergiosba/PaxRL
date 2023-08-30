@@ -267,9 +267,9 @@ def reynolds_jax(leader: int, X: chex.Array, X_dot: chex.Array) -> Tuple[chex.Ar
     total_mask = (total_count>0)[:,None]
     neighbors_mask = (neighbors_count>0)[:,None]
     probed_mask = prober_neighbors_matrix[:,None]
-    w_c = 0.4
+    w_c = 0.2
     w_a = 1
-    w_s = 1.2
+    w_s = 1
 
     return (total_mask*(w_c*cohesion+ w_a*alignment) + neighbors_mask*w_s*separation + 0*probed_mask*interaction), leader
 
@@ -287,7 +287,7 @@ def script(state, *args) -> Tuple[chex.Array, int]:
     S, leader = reynolds_jax(state.leader, state.X, state.X_dot)
 
     e = state.goal-state.X[leader]
-    Kp = 0
+    Kp = 0.1
     u = Kp*e
     #dprint("{x}",x=S[leader])
     S = S.at[leader].set(S[leader]+u)
