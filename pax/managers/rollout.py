@@ -85,7 +85,7 @@ class RolloutManager(object):
         return jnp.array(O), action, jnp.mean(cum_re)
 
 
-    #@eqx.filter_jit
+    @eqx.filter_jit
     def batch_evaluate(
             self,
             key_input,

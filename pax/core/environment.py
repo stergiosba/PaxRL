@@ -83,15 +83,19 @@ class Environment(eqx.Module):
             - `State (EnvState)`: The initial full state of the environment. Used internally.
         """        
 
-        init_X_scripted = jrandom.uniform(
+        init_X_scripted1 = jrandom.uniform(
             key, minval=645, maxval=765, \
             shape=(self.n_scripted,2)
             )
         
-        init_X_dot_scripted = jrandom.uniform(
+        init_X_scripted2 = jnp.array([[500,500]])
+        
+        init_X_dot_scripted1 = jrandom.uniform(
             key, minval=-1, maxval=1, \
             shape=(self.n_scripted,2)
             )
+        
+        init_X_dot_scripted2 = jnp.array([[0,0]])
         
         init_X_agents = jrandom.uniform(
             key, minval=400, maxval=300, \
@@ -111,9 +115,11 @@ class Environment(eqx.Module):
             )
 
         state = EnvState(
-            X=jnp.concatenate([init_X_scripted,
+            X=jnp.concatenate([init_X_scripted1,
+                            init_X_scripted2,
                             init_X_agents]),
-            X_dot=jnp.concatenate([init_X_dot_scripted,
+            X_dot=jnp.concatenate([init_X_dot_scripted1,
+                            init_X_dot_scripted2,
                             init_X_dot_agents]),
             leader = leader,
             goal = goal
