@@ -1,4 +1,4 @@
-from tests.test import run_test
+from oldtests.oldtest import run_test
 import argparse
 print("\n \
 *****************************************************\n \

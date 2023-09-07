@@ -1,23 +1,23 @@
 [settings]
-seed = 12515
-n_env = 4
+seed = 1255
+n_env = 2
 
 [scenario]
 n_agents = 1
-n_scripted_entities = 25
-episode_size = 5
+n_scripted_entities = 10
+episode_size = 50
 
 [action_space]
 low = -10
 high = 10
-interval = 5
+step = 2
 
 [observation_space]
 low = 0
-high = 800
+high = 100
 shape = [2,2]
 
 
 [critic_network]
-hidden_layers = [64, 32]
+hidden_layers = [5, 5]
 activations = ["relu", "relu"]

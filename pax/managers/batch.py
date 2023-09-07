@@ -5,7 +5,6 @@ import jax
 import jax.numpy as jnp
 from typing import Any, Callable, Tuple
 from collections import defaultdict
-import flax
 import numpy as np
 import tqdm
 

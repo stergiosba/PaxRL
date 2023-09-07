@@ -19,6 +19,7 @@ class Space(eqx.Module):
     def contains(self, x: chex.Scalar) -> chex.Scalar:
         raise NotImplementedError
 
+
 class Discrete(Space):
     """
     Minimal jittable class for discrete spaces.
@@ -28,11 +29,12 @@ class Discrete(Space):
         - `mapping: (chex.Scalar)`: Possible mapping #TODO
         - `dtype: (Union[jnp.float32, jnp.int32])`: Datatype of the action.
     """
+
     actions: chex.Array
     mapping: chex.Scalar
     dtype: Union[jnp.float32, jnp.int32]
 
-    def __init__(self, act_range:Sequence, dtype=jnp.float32, mapping=0):
+    def __init__(self, act_range: Sequence, dtype=jnp.float32, mapping=0):
         """tt
 
         `Args`:
@@ -52,13 +54,14 @@ class Discrete(Space):
     @property
     def size(self) -> int:
         return self.actions.size
-    
+
     @property
     def shape(self) -> Tuple:
         return self.actions.shape
-    
+
     def __repr__(self):
         return f"{__class__.__name__}({self.actions}, {self.dtype})"
+
 
 class MultiDiscrete(Space):
     """
@@ -69,11 +72,12 @@ class MultiDiscrete(Space):
         - `mapping: (chex.Scalar)`: Possible mapping #TODO
         - `dtype: (Union[jnp.float32, jnp.int32])`: Datatype of the action.
     """
+
     actions: chex.Array
     mapping: chex.Scalar
     dtype: Union[jnp.float32, jnp.int32]
 
-    def __init__(self, act_range:Sequence, dtype=jnp.float32, mapping=0):
+    def __init__(self, act_range: Sequence, dtype=jnp.float32, mapping=0):
         """
 
         `Args`:
@@ -82,8 +86,8 @@ class MultiDiscrete(Space):
             - mapping (int, optional): _description_. Defaults to 0.
         """
         low, high, step = act_range
-        
-        X,Y = jnp.mgrid[low:high+0.1:step, low:high+0.1:step]
+
+        X, Y = jnp.mgrid[low : high + 0.1 : step, low : high + 0.1 : step]
         self.actions = jnp.vstack((X.flatten(), Y.flatten())).T
 
         self.mapping = mapping
@@ -93,14 +97,14 @@ class MultiDiscrete(Space):
     def sample(self, key: chex.PRNGKey, shape: Tuple) -> chex.Array:
         """Sample random action uniformly from set of categorical choices."""
         return jrandom.choice(key, self.actions, shape=shape)
-    
+
     def contains(self, x: int) -> chex.Array:
         """Check whether specific object is within space."""
         # type_cond = isinstance(x, self.dtype)
         # shape_cond = (x.shape == self.shape)
         range_cond = jnp.logical_and(x >= 0, x < self.n)
         return range_cond
-    
+
     @property
     def shape(self) -> Tuple:
         return self.actions.shape
@@ -108,13 +112,13 @@ class MultiDiscrete(Space):
     @property
     def size(self) -> int:
         return self.actions.shape[0]
-    
+
     def __repr__(self):
         return f"{__class__.__name__}({self.actions}, {self.dtype})"
 
 
 class Box(Space):
-    """ Jittable space for a possibly unbounded Box in R^n
+    """Jittable space for a possibly unbounded Box in R^n
 
     Args:
         Space [Inheritance]: Abstact class Space
@@ -122,23 +126,25 @@ class Box(Space):
     Returns:
         chex.Array: Uniform sample
     """
+
     low: Union[chex.Scalar, chex.Array]
     high: Union[chex.Scalar, chex.Array]
     shape: Tuple
     dtype: Union[jnp.float32, jnp.int32]
-    
+
     @eqx.filter_jit
-    def sample(self, key:chex.PRNGKey) -> chex.Array:
+    def sample(self, key: chex.PRNGKey) -> chex.Array:
         """Generates a single random sample inside the Box.
         Args:
             `key (chex.PRNGKey)` : A PRNGKey used for Jax randomness.
         Returns:
             `sample (chex.Array`): Uniform sample from the Box
         """
-        
+
         return jrandom.uniform(
-            key, shape=self.shape, dtype=self.dtype, minval=self.low, maxval=self.high)
-    
+            key, shape=self.shape, dtype=self.dtype, minval=self.low, maxval=self.high
+        )
+
     @eqx.filter_jit
     def contains(self, x: int) -> chex.Array:
         """Check whether specific object is within space."""
@@ -146,10 +152,12 @@ class Box(Space):
         # shape_cond = (x.shape == self.shape)
         range_cond = jnp.logical_and(jnp.all(x >= self.low), jnp.all(x <= self.high))
         return range_cond
-    
+
     @property
     def size(self):
         return jnp.array(self.shape).prod()
-        
+
     def __repr__(self):
-        return f"{__class__.__name__}({self.low}, {self.high}, {self.shape}, {self.dtype})"
+        return (
+            f"{__class__.__name__}({self.low}, {self.high}, {self.shape}, {self.dtype})"
+        )

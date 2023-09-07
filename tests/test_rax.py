@@ -1,24 +1,110 @@
+import pax
+import pytest
+import pax.scenarios.rax as rax
+import jax.numpy as jnp
+import jax.random as jrandom
 import chex
 import jax.numpy.linalg as la
-from jax import jit, numpy as jnp, nn as jnn
+from jax import jit, numpy as jnp, nn as jnn, scipy as jsp
 from typing import Tuple
-from jax.debug import print as dprint
-from pax.core.state import EnvState
 
 
-@jit
-def distance_tensor_jax(X: chex.Array) -> chex.Array:
-    """Parallelized calculation of euclidean distances between all pairs of swarm agents
-        for all environment instances in one go.
+class TestRax:
+    @pytest.fixture
+    def setup(self):
+        return (3, 5)
 
-    Args:
-        `X (chex.Array)`: Swarm agents position tensor of shape: (n_envs,n_agents,2).
+    @pytest.fixture
+    def X(self, setup):
+        n_env, n_agents = setup
+        return jnp.arange(n_env * n_agents * 2, dtype=jnp.float32).reshape(
+            n_env, n_agents, 2
+        )
 
-    Returns:
-        `Distance_matrix (chex.Array)`: Distance tensor of shape: (n_envs,n_agents,n_agents)
-    """
-    diff_tensor = X[:, None, ...] - X[..., None, :]
-    return jnp.einsum("ijkl->ijk", diff_tensor**2)
+    def test_one(self, X, setup):
+        """Calculates the distance tensor for all agents in all environments."""
+        # Arrange
+        n_env, n_agents = setup
+        agent_radius = 6
+        # Act
+
+        distance_tensor = rax.distance_tensor_jax(X)
+        # Assert
+
+        assert distance_tensor.shape == (n_env, n_agents, n_agents)
+        assert (
+            distance_tensor
+            == jnp.array(
+                [
+                    [
+                        [0, 8, 32, 72, 128],
+                        [8, 0, 8, 32, 72],
+                        [32, 8, 0, 8, 32],
+                        [72, 32, 8, 0, 8],
+                        [128, 72, 32, 8, 0],
+                    ],
+                    [
+                        [0, 8, 32, 72, 128],
+                        [8, 0, 8, 32, 72],
+                        [32, 8, 0, 8, 32],
+                        [72, 32, 8, 0, 8],
+                        [128, 72, 32, 8, 0],
+                    ],
+                    [
+                        [0, 8, 32, 72, 128],
+                        [8, 0, 8, 32, 72],
+                        [32, 8, 0, 8, 32],
+                        [72, 32, 8, 0, 8],
+                        [128, 72, 32, 8, 0],
+                    ],
+                ],
+                dtype=jnp.float32,
+            )
+        ).all()
+
+        neighbors_tensor = (distance_tensor > 0) & (
+            distance_tensor <= agent_radius**2
+        )  # .astype(int)
+
+        # Calculating all neighbors counts, Summing over the agents axis: 1.
+        neighbors_count = jnp.sum(neighbors_tensor, axis=1)
+
+        assert (
+            neighbors_tensor
+            == jnp.array(
+                [
+                    [
+                        [False, True, True, False, False],
+                        [True, False, True, True, False],
+                        [True, True, False, True, True],
+                        [False, True, True, False, True],
+                        [False, False, True, True, False],
+                    ],
+                    [
+                        [False, True, True, False, False],
+                        [True, False, True, True, False],
+                        [True, True, False, True, True],
+                        [False, True, True, False, True],
+                        [False, False, True, True, False],
+                    ],
+                    [
+                        [False, True, True, False, False],
+                        [True, False, True, True, False],
+                        [True, True, False, True, True],
+                        [False, True, True, False, True],
+                        [False, False, True, True, False],
+                    ],
+                ],
+                dtype=bool,
+            )
+        ).all()
+
+        assert (
+            neighbors_count
+            == jnp.array(
+                [[2, 3, 4, 3, 2], [2, 3, 4, 3, 2], [2, 3, 4, 3, 2]], dtype=jnp.int32
+            )
+        ).all()
 
 
 @jit
@@ -60,30 +146,6 @@ def prober_neighbors(distance_tensor: chex.Array, prober_radius: float) -> chex.
     )  # .astype(int)
 
     return prober_neighbors_matrix
-
-
-@jit
-def neighbors(
-    distance_tensor: chex.Array, agent_radius: float
-) -> Tuple[chex.Array, chex.Array]:
-    """Calculates the neighborhood for each agent as a set and the cardinality of each set.
-    Args:
-        - `distance_tensor (chex.Array)`: Distance tensor, euclidean distances between all pairs of swarm agents for all
-            parallel environments.
-        - `agent_radius (float)`: Influence radius for the simple agents. Same for all environments.
-
-    Returns:
-        - `neighbors_tensor (chex.Array)`: Tensor of neighbors for every agent and every environment.
-        - `neighbors_count (chex.Array)`: Agent-wise sum of neighbors_tensor, i.e. cardinality of each neighborhood.
-    """
-    neighbors_tensor = (distance_tensor > 0) & (
-        distance_tensor <= agent_radius**2
-    )  # .astype(int)
-
-    # Calculating all neighbors counts, Summing over the agents axis: 1.
-    neighbors_count = jnp.sum(neighbors_tensor, axis=1)
-
-    return neighbors_tensor, neighbors_count
 
 
 @jit
@@ -149,7 +211,7 @@ def mixed_steer(
     max_speed = 20
     # Cohesion steer calculation
     coh = T[0] - X
-    coh = max_speed * (coh / (la.norm(coh + eps, axis=-1)[..., None]))  # - X_dot
+    coh = max_speed * (coh / (la.norm(coh + eps, axis=-1)[..., None])) - X_dot
 
     # Alignment steer calculations
     alig = T[1]
@@ -160,7 +222,6 @@ def mixed_steer(
     alig = max_force * (alig / la.norm(alig + eps, axis=-1)[..., None])
 
     # Leader whitening (i.e. the leader is not affected by anyone.)
-
     coh = coh.at[jnp.arange(n_env), leader, :].set(jnp.array([0, 0]))
     alig = alig.at[jnp.arange(n_env), leader, :].set(jnp.array([0, 0]))
 
@@ -201,7 +262,7 @@ def separation_steer(
         jnp.einsum("ijk,ijl->ijl", scaled_neighbors_matrix, X)
         - scaled_neighbors_matrix @ X
     )
-    sep = max_speed * (sep / (la.norm(sep + eps, axis=-1)[..., None])) - X_dot
+    # sep = max_speed*(sep/(la.norm(sep+eps, axis=-1)[...,None])) - X_dot
 
     max_force = 4
     sep = max_force * (sep / (la.norm(sep + eps, axis=-1)[..., None]))
@@ -271,7 +332,7 @@ def reynolds_jax(
     prb_radius = 3 * agent_radius
 
     # Leader strength
-    ldr_str = 500
+    ldr_str = 50
 
     # Calculate the neighborhood of the leader.
     T_ldr = leader_neighbors(T_d, leader, ldr_radius)
@@ -298,7 +359,7 @@ def reynolds_jax(
     separation = separation_steer(X, X_dot, T_d, T_nbr)
 
     # Prober interaction.
-    # interaction = interaction_steer(X-X[:,-1], T_d)
+    interaction = interaction_steer(X - X[:, -1], T_d)
 
     # Performs neighbors masking.
     # total_mask = (total_count>0)[:,None]
@@ -316,7 +377,7 @@ def reynolds_jax(
 
 
 @jit
-def script(state: EnvState, *args) -> Tuple[chex.Array, int]:
+def script(state, *args) -> Tuple[chex.Array, int]:
     """Calculates the scripted action for the swarm agents.
 
     `Args`:
@@ -326,11 +387,9 @@ def script(state: EnvState, *args) -> Tuple[chex.Array, int]:
         - `steer` (chex.Array): The steer vector of swarm agents shape=(n,2).
     """
     S = reynolds_jax(state.leader, state.X, state.X_dot)
+    # dprint("{x}",x=S)
     n_env, _, _ = state.X.shape
-    #dprint("{x}\n---",x=state.curve(jnp.array([1.0]))- state.X[jnp.arange(n_env), state.leader])
-    #dprint("{x}",x=state.curve(jnp.array([1.0])[jnp.arange(n_env)]))#-state.X[jnp.arange(n_env), state.leader])
-    e = state.curve(jnp.array([1.0]))[0]- state.X[jnp.arange(n_env), state.leader]
-    #dprint("{e}",e=e)
+    e = state.goal - state.X[jnp.arange(n_env), state.leader]
     Kp = 0.3
     u = Kp * e
     S = S.at[jnp.arange(n_env), state.leader].set(
