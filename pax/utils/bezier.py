@@ -1,17 +1,17 @@
 import chex
 import jax.numpy as jnp
-from jax import jit, vmap
 import equinox as eqx
+from jax import jit, vmap
+from typing import Union
 
 
 class BezierCurve3(eqx.Module):
-    points: jnp.ndarray
+    points: chex.Array
 
     def __init__(self, points):
         self.points = points
 
-    @jit
-    def __call__(self, s):
+    def __call__(self, s: Union[chex.Scalar, jnp.float32, chex.Array]):
         @jit
         def evaluate(s):
             return (
@@ -21,30 +21,7 @@ class BezierCurve3(eqx.Module):
                 @ self.points
             )
 
-        return vmap(evaluate)(s)
-
-
-class BezierCurve5(eqx.Module):
-    points: jnp.ndarray
-
-    def __init__(self, points: chex.Array) -> chex.Array:
-        self.points = points
-
-    @jit
-    def __call__(self, s: jnp.float32) -> chex.Array:
-        @jit
-        def evaluate(s):
-            return (
-                jnp.array(
-                    [
-                        (1 - s) ** 5,
-                        5 * s * (1 - s) ** 4,
-                        10 * (1 - s) ** 2 * s**3,
-                        10 * (1 - s) * s**4,
-                        s**5,
-                    ]
-                )
-                @ self.points
-            )
-
-        return vmap(evaluate)(s)
+        if isinstance(s, (chex.Scalar, jnp.float32)):
+            return evaluate(s)
+        elif isinstance(s, chex.Array):
+            return vmap(evaluate)(s)

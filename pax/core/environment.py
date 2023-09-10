@@ -12,8 +12,6 @@ from pax.scenarios.rax import script
 from jax.debug import print as dprint  # type: ignore
 from pax.core.state import EnvState
 from pax.utils.bezier import BezierCurve3
-import matplotlib.pyplot as plt
-
 
 class Environment(eqx.Module):
     """The main `Pax` class.
@@ -100,7 +98,9 @@ class Environment(eqx.Module):
             key, minval=-1, maxval=1, shape=(self.n_agents, 2)
         )
 
-        leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted - 1)
+        #leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted + 1)
+        #leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
+        leader = 0
 
         final_goal = jrandom.uniform(key, minval=200, maxval=500, shape=(2,))
         init_leader = init_X_scripted1[leader]
@@ -115,9 +115,6 @@ class Environment(eqx.Module):
         )
         leader_path_curve = BezierCurve3(P)
 
-        x = jnp.linspace(0, 1, 4)
-        y = leader_path_curve(x)
-
         state = EnvState(
             X=jnp.concatenate([init_X_scripted1, init_X_scripted2, init_X_agents]),
             X_dot=jnp.concatenate(
@@ -125,6 +122,7 @@ class Environment(eqx.Module):
             ),
             leader=leader,
             curve=leader_path_curve,
+            t=0.0
         )
         return (self.get_obs(state), state)  # type: ignore
 
@@ -146,13 +144,13 @@ class Environment(eqx.Module):
         X = state.X + 60 * dt * X_dot / la.norm(X_dot, axis=1)[:, None]
         X = jnp.clip(X, a_min=0, a_max=800)
 
-        state = EnvState(X, X_dot, state.leader, state.curve)  # type: ignore
+        state = EnvState(X, X_dot, state.leader, state.curve, state.t+dt)  # type: ignore
 
         obs = self.get_obs(state)
         reward = jnp.array([1.0])
-
-        # The state.curve(jnp.array([1.0])) is the final goal
-        norm_e = la.norm(state.curve(jnp.array([1.0])) - X[1])
+        #dprint("{t}",t=state.t)
+        # The state.curve(1.0) is the final goal
+        norm_e = la.norm(state.curve(1.0) - X[1])
 
         done = lax.select(norm_e < 5, jnp.array([1.0]), jnp.array([0.0]))
 

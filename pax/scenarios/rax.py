@@ -125,8 +125,8 @@ def mixed_steer(
     X: chex.Array,
     X_dot: chex.Array,
     leader: chex.Array,
-    total_inf: chex.Array,
-    total_count: chex.Array,
+    total_infl: chex.Array,
+    total_neighbors: chex.Array,
 ) -> Tuple[chex.Array, chex.Array]:
     """Cohesion and alignment calculations of `Rax`: Leader modified Reynolds flocking model in Jax.
         Calculates the cohesion steering based on local interactions with simple agents and with the leader using Reynold's Dynamics
@@ -134,17 +134,17 @@ def mixed_steer(
     Args:
         - `X (chex.Array)`: Swarm agents position matrix of shape: (n,2).
         - `X_dot (chex.Array)`: Swarm agents velocity matrix of shape: (n,2).
-        - `total_inf (chex.Array)`: The total influence calculated for each agent
-        - `total_count (chex.Array)`: The total number of neighbors for each agent.
+        - `total_infl (chex.Array)`: The total influence calculated for each agent
+        - `total_neighbors (chex.Array)`: The total number of neighbors for each agent.
 
     Returns:
         - `cohesion (chex.Array)`: The cohesion force exerted to each agent.
     """
 
     # Small epsilon to avoid division by zero
-    eps = 10**-7
+    eps = 10**-16
     n_env, _, _ = X.shape
-    T = total_inf / (total_count[..., None] + eps)
+    T = total_infl / (total_neighbors[..., None] + eps)
 
     max_speed = 20
     # Cohesion steer calculation
@@ -224,7 +224,7 @@ def interaction_steer(Diff: chex.Array, corr_dist_mat: chex.Array) -> chex.Array
     """
 
     # Small epsilon to avoid division by zero
-    eps = 10**-7
+    eps = 10**-16
 
     max_force = 75
 
@@ -301,17 +301,22 @@ def reynolds_jax(
     # interaction = interaction_steer(X-X[:,-1], T_d)
 
     # Performs neighbors masking.
-    # total_mask = (total_count>0)[:,None]
-    # neighbors_mask = (C_nbr>0)[:,None]
+    total_mask = (total_count > 0).astype(int)
+    neighbors_mask = C_nbr > 0
     # probed_mask = T_prb[:,None]
-    w_c = 0.5
-    w_a = 0.6
+    w_c = 0.4
+    w_a = 0.5
     w_s = 1
-    steer = (
-        w_c * cohesion + w_a * alignment + w_s * separation
-    )  # + probed_mask*interaction
-    steer = steer.at[..., -1, :].set(jnp.array([0, 0]))
 
+    #dprint("total_mask = {e}\n", e=total_mask)
+    #dprint("separation = {e}\n", e=cohesion)
+    #dprint(
+    #    "mult = {e}\n-------------------",
+    #    e=jnp.einsum("ijm,ij->ijm", cohesion, total_mask),
+    #)
+    steer = (w_c * cohesion + w_a * alignment) + w_s * separation
+
+    steer = steer.at[..., -1, :].set(jnp.array([0, 0]))
     return steer  # + 0*probed_mask*interaction), leader
 
 
@@ -327,15 +332,12 @@ def script(state: EnvState, *args) -> Tuple[chex.Array, int]:
     """
     S = reynolds_jax(state.leader, state.X, state.X_dot)
     n_env, _, _ = state.X.shape
-    #dprint("{x}\n---",x=state.curve(jnp.array([1.0]))- state.X[jnp.arange(n_env), state.leader])
-    #dprint("{x}",x=state.curve(jnp.array([1.0])[jnp.arange(n_env)]))#-state.X[jnp.arange(n_env), state.leader])
-    e = state.curve(jnp.array([1.0]))[0]- state.X[jnp.arange(n_env), state.leader]
-    #dprint("{e}",e=e)
+    #dprint("time: {e}\n", e=state.t[0])
+    dprint("{t}", t=state.t)
+    e = state.curve(1.0) - state.X[jnp.arange(n_env), state.leader]
     Kp = 0.3
     u = Kp * e
-    S = S.at[jnp.arange(n_env), state.leader].set(
-        S[jnp.arange(n_env), state.leader] + u
-    )
+    S = S.at[jnp.arange(n_env), state.leader].set(S[jnp.arange(n_env), state.leader] + u)
+    #dprint("Outside: {t}: {e}\n", t=state.t ,e=S)
 
-    # dprint("{x}",x=S)
     return S

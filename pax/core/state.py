@@ -18,6 +18,7 @@ class EnvState(eqx.Module):
     X_dot: chex.Array
     leader: chex.Array
     curve: BezierCurve3
+    t: chex.Scalar
 
     def __repr__(self):
         return f"{__class__.__name__}: {str(self.__dict__)}"

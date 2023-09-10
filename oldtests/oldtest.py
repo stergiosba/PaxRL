@@ -8,6 +8,7 @@ from pax.models.mlp import A2CNet
 from pax.managers.trainer import Trainer
 from pax.render.render import render
 
+
 def test_1(console_args):
     env_name = "prob_env"
     env, config = make(env_name)
@@ -19,12 +20,15 @@ def test_1(console_args):
     s = time.time()
     (obs, act, batch_reward) = trainer(key)
     print(f"Time for trainer: {time.time()-s}")
-    render(env, obs, console_args.render, 0)
+
+    if console_args.render in ["human", "Human", "h", "H"]:
+        render(env, obs, record=False)
 
 
 TESTS = {"1": test_1}
 
-def run_test(console_args):
+def run(console_args):
     s = time.time()
-    TESTS[console_args.test](console_args)
+    #TESTS[console_args.test](console_args)
+    TESTS["1"](console_args)
     print(f"Total time:{time.time()-s}")
