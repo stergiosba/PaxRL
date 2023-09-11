@@ -1,11 +1,11 @@
 [settings]
-seed = 125
+seed = 1251
 n_env = 1
 
 [scenario]
 n_agents = 1
-n_scripted_entities = 2
-episode_size = 5
+n_scripted_entities = 20
+episode_size = 450
 
 [action_space]
 low = -10

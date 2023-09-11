@@ -14,9 +14,9 @@ class EnvState(eqx.Module):
         - `goal (chex.Array)`: The location of the goal.
     """
 
-    X: chex.Array
-    X_dot: chex.Array
-    leader: chex.Array
+    X: chex.ArrayDevice
+    X_dot: chex.ArrayDevice
+    leader: chex.ArrayDevice
     curve: BezierCurve3
     t: chex.Scalar
 

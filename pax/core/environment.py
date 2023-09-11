@@ -78,32 +78,28 @@ class Environment(eqx.Module):
             - `State (EnvState)`: The initial full state of the environment. Used internally.
         """
 
-        init_X_scripted1 = jrandom.uniform(
-            key, minval=645, maxval=765, shape=(self.n_scripted, 2)
+        init_X_scripted = jrandom.uniform(
+            key, minval=445, maxval=565, shape=(self.n_scripted, 2)
         )
 
-        init_X_scripted2 = jnp.array([[500, 500]])
-
-        init_X_dot_scripted1 = jrandom.uniform(
-            key, minval=-1, maxval=1, shape=(self.n_scripted, 2)
+        init_X_dot_scripted = jrandom.uniform(
+            key, minval=-1, maxval=-1, shape=(self.n_scripted, 2)
         )
-
-        init_X_dot_scripted2 = jnp.array([[0, 0]])
 
         init_X_agents = jrandom.uniform(
-            key, minval=100, maxval=250, shape=(self.n_agents, 2)
+            key, minval=250, maxval=350, shape=(self.n_agents, 2)
         )
 
         init_X_dot_agents = jrandom.uniform(
-            key, minval=-1, maxval=1, shape=(self.n_agents, 2)
+            key, minval=1, maxval=1, shape=(self.n_agents, 2)
         )
 
-        #leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted + 1)
+        leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
         #leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
-        leader = 0
+        #leader = 0
 
         final_goal = jrandom.uniform(key, minval=200, maxval=500, shape=(2,))
-        init_leader = init_X_scripted1[leader]
+        init_leader = init_X_scripted[leader]
 
         P = jnp.array(
             [
@@ -113,12 +109,13 @@ class Environment(eqx.Module):
                 final_goal,
             ]
         )
+
         leader_path_curve = BezierCurve3(P)
 
         state = EnvState(
-            X=jnp.concatenate([init_X_scripted1, init_X_scripted2, init_X_agents]),
+            X=jnp.concatenate([init_X_scripted, init_X_agents]),
             X_dot=jnp.concatenate(
-                [init_X_dot_scripted1, init_X_dot_scripted2, init_X_dot_agents]
+                [init_X_dot_scripted, init_X_dot_agents]
             ),
             leader=leader,
             curve=leader_path_curve,
@@ -144,13 +141,13 @@ class Environment(eqx.Module):
         X = state.X + 60 * dt * X_dot / la.norm(X_dot, axis=1)[:, None]
         X = jnp.clip(X, a_min=0, a_max=800)
 
-        state = EnvState(X, X_dot, state.leader, state.curve, state.t+dt)  # type: ignore
+        state = EnvState(X, X_dot, state.leader, state.curve, state.t+1)  # type: ignore
 
         obs = self.get_obs(state)
         reward = jnp.array([1.0])
-        #dprint("{t}",t=state.t)
+
         # The state.curve(1.0) is the final goal
-        norm_e = la.norm(state.curve(1.0) - X[1])
+        norm_e = la.norm(state.curve.eval(1.0) - X[1])
 
         done = lax.select(norm_e < 5, jnp.array([1.0]), jnp.array([0.0]))
 

@@ -6,22 +6,20 @@ from typing import Union
 
 
 class BezierCurve3(eqx.Module):
-    points: chex.Array
+    points: chex.ArrayDevice
 
     def __init__(self, points):
         self.points = points
 
-    def __call__(self, s: Union[chex.Scalar, jnp.float32, chex.Array]):
-        @jit
-        def evaluate(s):
-            return (
-                jnp.array(
-                    [(1 - s) ** 3, 3 * s * (1 - s) ** 2, 3 * (1 - s) * s**2, s**3]
-                )
-                @ self.points
+    @jit
+    def eval(self, s: chex.Scalar) -> chex.ArrayDevice:
+        return (
+            jnp.array(
+                [(1 - s) ** 3, 3 * s * (1 - s) ** 2, 3 * (1 - s) * s**2, s**3]
             )
+            @ self.points
+        )
 
-        if isinstance(s, (chex.Scalar, jnp.float32)):
-            return evaluate(s)
-        elif isinstance(s, chex.Array):
-            return vmap(evaluate)(s)
+    @jit
+    def veval(self, s: chex.ArrayDevice) -> chex.ArrayDevice:
+        return vmap(self.eval)(s)
