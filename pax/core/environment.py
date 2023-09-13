@@ -81,31 +81,36 @@ class Environment(eqx.Module):
         init_X_scripted = jrandom.uniform(
             key, minval=445, maxval=565, shape=(self.n_scripted, 2)
         )
+        """
+        init_X_scripted = jnp.array([500,500])+jrandom.rayleigh(
+            key, scale=100, shape=(self.n_scripted, 2)
+        )
+        """
 
-        init_X_dot_scripted = jrandom.uniform(
-            key, minval=-1, maxval=-1, shape=(self.n_scripted, 2)
+        init_X_dot_scripted = 5*jrandom.uniform(
+            key, minval=-1, maxval=1, shape=(self.n_scripted, 2)
         )
 
-        init_X_agents = jrandom.uniform(
-            key, minval=250, maxval=350, shape=(self.n_agents, 2)
+        init_X_agents = jnp.array([100,700])+jrandom.cauchy(
+            key, shape=(self.n_agents, 2)
         )
 
         init_X_dot_agents = jrandom.uniform(
             key, minval=1, maxval=1, shape=(self.n_agents, 2)
-        )
+        )*jnp.sqrt(200)
 
         leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
-        #leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
-        #leader = 0
 
         final_goal = jrandom.uniform(key, minval=200, maxval=500, shape=(2,))
         init_leader = init_X_scripted[leader]
 
+        A = (init_leader+final_goal)/2
+
         P = jnp.array(
             [
-                init_leader,
-                (2 * init_leader + final_goal) / 3,
-                (init_leader + 2 * final_goal) / 3,
+                A,
+                (2 * A + final_goal) / 3,
+                (A + 2 * final_goal) / 3,
                 final_goal,
             ]
         )
@@ -135,10 +140,12 @@ class Environment(eqx.Module):
         Returns:
             - `environment_step Tuple[Sequence[chex.Array], EnvState, chex.Array, chex.Array])`: A step in the environment.
         """
-        X_ddot = action
-        dt = 1 / 60
-        X_dot = state.X_dot + dt * X_ddot
-        X = state.X + 60 * dt * X_dot / la.norm(X_dot, axis=1)[:, None]
+
+        dt = 1 / 30
+        X_dot = state.X_dot + dt/6 * action
+        X_dot = jnp.clip(X_dot, a_min=-20, a_max=20)
+        #dprint("{x}",x=X_dot)
+        X = state.X +  dt * X_dot#/ la.norm(X_dot, axis=1)[:, None]
         X = jnp.clip(X, a_min=0, a_max=800)
 
         state = EnvState(X, X_dot, state.leader, state.curve, state.t+1)  # type: ignore
