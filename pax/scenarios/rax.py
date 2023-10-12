@@ -300,20 +300,19 @@ def reynolds_jax(
     # Performs neighbors masking.
     total_mask = total_count > 0
     neighbors_mask = C_nbr > 0
-    probed_mask = (T_prb > 0)[None, :]
-    w_c = 0.55
-    w_a = 0.75
+    prober_mask = (T_prb > 0)[None, :]
+    w_c = 0
+    w_a = 0
     w_s = 1
-
 
     steer = jnp.einsum(
         "ijm,ij->ijm", (w_c * cohesion + w_a * alignment), total_mask
     ) + jnp.einsum("ijm,ij->ijm", (w_s * separation), total_mask)
 
     # This sets the influences on the prober to 0.
-    steer = steer.at[..., -1, :].set(jnp.array([0, 0]))
+    #steer = steer.at[..., -1, :].set(jnp.array([0, 0]))
 
-    steer = steer + jnp.einsum("ijm,ij->ijm", interaction, probed_mask)
+    #steer = steer + jnp.einsum("ijm,ij->ijm", interaction, prober_mask)
     return steer
 
 @jit
@@ -337,7 +336,7 @@ def script(state: EnvState, *args) -> Tuple[chex.ArrayDevice, int]:
     S3 = reynolds_jax(state.leader, state.X+dt/2*state.X_dot, state.X_dot+dt/2*S2)
     S4 = reynolds_jax(state.leader, state.X+dt*state.X_dot, state.X_dot+dt*S3)
     n_env, _, _ = state.X.shape
-    ff = 1000 - 1
+    ff = 2000 - 1
 
     # dprint("s=  {x}",x=S[jnp.arange(n_env), state.leader])
     e = state.curve.eval(state.t[0] / ff) - state.X[jnp.arange(n_env), state.leader]
@@ -345,7 +344,7 @@ def script(state: EnvState, *args) -> Tuple[chex.ArrayDevice, int]:
     e_com = swarm_center(state.X) - state.X[jnp.arange(n_env), -1]
 
     # e = state.curve.eval(1) - state.X[jnp.arange(n_env), state.leader]
-    Kp = 5
+    Kp = 0
     u = Kp * e
     up = 5 * e_com
     # dprint("u= {x}",x=u)
@@ -353,6 +352,7 @@ def script(state: EnvState, *args) -> Tuple[chex.ArrayDevice, int]:
     S = S.at[jnp.arange(n_env), state.leader].set(
         S[jnp.arange(n_env), state.leader] + u
     )
+
     S = S.at[jnp.arange(n_env), -1].set(
         S[jnp.arange(n_env), -1] + up
     )

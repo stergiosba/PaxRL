@@ -6,7 +6,7 @@ import tomli
 from pax import make
 from pax.models.mlp import A2CNet
 from pax.managers.trainer import Trainer
-from pax.render.render import render
+from pax.render.render import render, matplotlib_render
 
 
 def test_1(console_args):
@@ -23,6 +23,9 @@ def test_1(console_args):
 
     if console_args.render in ["human", "Human", "h", "H"]:
         render(env, obs, record=False)
+
+    elif console_args.render in ["matplotlibe", "m", "M", "mat"]:
+        matplotlib_render(env, obs, record=False)
 
 
 TESTS = {"1": test_1}

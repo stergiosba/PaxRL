@@ -39,6 +39,7 @@ class RolloutManager(object):
     def batch_step(self, state: EnvState, action):
         return jax.vmap(self.env.step, in_axes=(0, 0))(state, action)
 
+    # Deprecated
     def batch_evaluate_loopy(self, key_input: chex.PRNGKey, num_envs: int):
         key_rst, key_ep = jax.random.split(key_input)
         O = []
@@ -75,9 +76,11 @@ class RolloutManager(object):
             """lax.scan compatible step transition in jax env."""
             obs, state, key, cum_reward, valid_mask = state_input
             key, key_step, key_net = jax.random.split(key, 3)
-            # action, _, _, key = self.select_action(obs, key_net)
+
             action = script(state)
-            # action  = self.random_action(num_envs, key_net)
+            #aa = self.random_action(obs[0].shape[0], key_net)
+            #action = action.at[jnp.arange(num_envs), -1].set(aa[0])
+
             next_o, next_s, reward, done = self.batch_step(
                 state,
                 action,

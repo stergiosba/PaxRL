@@ -96,8 +96,8 @@ class Environment(eqx.Module):
         )
 
         init_X_dot_agents = jrandom.uniform(
-            key, minval=1, maxval=1, shape=(self.n_agents, 2)
-        )*jnp.sqrt(200)
+            key, minval=-1, maxval=1, shape=(self.n_agents, 2)
+        )*jnp.sqrt(400)
 
         leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
 
@@ -144,7 +144,7 @@ class Environment(eqx.Module):
         dt = 1 / 30
         X_dot = state.X_dot + dt/6 * action
         X_dot = jnp.clip(X_dot, a_min=-20, a_max=20)
-        #dprint("{x}",x=X_dot)
+        #dprint("{x}",x=action)
         X = state.X +  dt * X_dot#/ la.norm(X_dot, axis=1)[:, None]
         X = jnp.clip(X, a_min=0, a_max=800)
 

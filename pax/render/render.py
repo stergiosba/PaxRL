@@ -1,7 +1,11 @@
 import chex
+import os
 import pyglet as pg
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 from pax.render.utils import ScriptedEntity, AgentEntity
+from scipy.stats import multivariate_normal
 
 ScriptedEntities = []
 Agents = []
@@ -78,6 +82,10 @@ def render(env, obs, record=False):
     if isinstance(GG, chex.Array):
         GG = np.array(GG)
 
+    
+    if record:
+        os.makedirs('record', exist_ok=True)
+
 
     window = pg.window.Window(800, 800, caption="Swarm simulation")
     fps = pg.window.FPSDisplay(window=window)
@@ -147,12 +155,102 @@ def render(env, obs, record=False):
                 P[t[0], env_id[0], 1, env.n_scripted + i],
             )
 
+        batch.draw()
+        pg.gl.glClearColor(1, 1, 1, 1)
+
         if record:
             pg.image.get_buffer_manager().get_color_buffer().save(
-                f"saved/screenshot_frame_{t[0]}.png"
+                f"record/frame_{t[0]}.png"
             )
         t[0] += 1
 
         t[0] %= env.params["scenario"]["episode_size"]
 
     pg.app.run()
+
+def gauss2d(mu, sigma, to_plot=False):
+    w, h = 100, 100
+
+    std = [np.sqrt(sigma[0]), np.sqrt(sigma[1])]
+    x = np.linspace(mu[0] - 3 * std[0], mu[0] + 3 * std[0], w)
+    y = np.linspace(mu[1] - 3 * std[1], mu[1] + 3 * std[1], h)
+
+    x, y = np.meshgrid(x, y)
+
+    x_ = x.flatten()
+    y_ = y.flatten()
+    xy = np.vstack((x_, y_)).T
+
+    normal_rv = multivariate_normal(mu, sigma)
+    z = normal_rv.pdf(xy)
+    z = z.reshape(w, h, order='F')
+
+    if to_plot:
+        plt.contourf(x, y, z.T)
+        plt.show()
+
+    return plt.contourf(x, y, z.T)
+
+def matplotlib_render(env, obs, record=False):
+
+    P = obs[0]
+    L = obs[1]
+    GG = obs[2]
+
+    if isinstance(P, chex.Array):
+        P = np.array(P)
+
+    if isinstance(L, chex.Array):
+        L = np.array(L)
+
+    if isinstance(GG, chex.Array):
+        GG = np.array(GG)
+
+
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 800)  # Set x-axis limits
+    ax.set_ylim(0, 800)  # Set y-axis limits
+
+    # Generate initial data for the scatter plot
+
+    n_env = 0
+    print(P[:,n_env,0,:,0])
+
+    x_data = P[0,n_env,0,:,0]
+    y_data = P[0,n_env,0,:,1]
+
+    mean = [5, 5]  # Mean of the distribution (centered at x=5, y=5)
+    covariance = [75.0, 90.0] # Covariance matrix
+
+    # Create a grid of points for the 2D normal distribution
+    x, y = np.meshgrid(np.linspace(0, 10, 100), np.linspace(0, 10, 100))
+    pos = np.dstack((x, y))
+
+    # Calculate the 2D normal distribution values at the grid points
+    rv = multivariate_normal(mean, [[2.0, 0.3], [0.3, 0.5]])
+    z = rv.pdf(pos)
+
+    #z = gauss2d(MU, SIGMA, True)
+    scatter = ax.scatter(x_data, y_data)  # Initial scatter plot
+
+
+    # Plot the 2D normal distribution as a contour plot
+    contour = ax.contourf(x, y, z, cmap='viridis', alpha=0.5)
+
+    # Define the update function for the animation
+    def update(frame):
+    #    # Update the x and y coordinates of the scatter plot with new random values
+        scatter.set_offsets(P[frame,n_env,0,:,:])
+
+
+        # Update the contour plot (2D normal distribution)
+        z = rv.pdf(pos + frame * 0.1)  # Shift the distribution over time
+        contour = ax.contourf(x, y, z, cmap='viridis', alpha=0.5)
+
+        return scatter, contour
+
+    # Create the animation
+    ani = FuncAnimation(fig, update, frames=2000, interval=20, blit=True)
+
+    # Show the animation
+    plt.show()
