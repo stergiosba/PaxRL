@@ -17,8 +17,8 @@ def reset(env, P, L, GG, batch, env_id=0):
         if i == L[0, env_id]:
             scripted_entity = ScriptedEntity(
                 id=i,
-                x=P[0, env_id, 0, i, 0],
-                y=P[0, env_id, 0, i, 1],
+                x=P[0, env_id, i, 0],
+                y=P[0, env_id, i, 1],
                 radius=10,
                 neighborhood_radius=120,
                 color=(255, 128, 0, 255),
@@ -27,8 +27,8 @@ def reset(env, P, L, GG, batch, env_id=0):
         else:
             scripted_entity = ScriptedEntity(
                 id=i,
-                x=P[0, env_id, 0, i, 0],
-                y=P[0, env_id, 0, i, 1],
+                x=P[0, env_id, i, 0],
+                y=P[0, env_id, i, 1],
                 radius=10,
                 neighborhood_radius=30,
                 color=(50, 50, 255, 255),
@@ -39,18 +39,18 @@ def reset(env, P, L, GG, batch, env_id=0):
 
     for i in range(env.n_scripted, env.n_scripted + env.n_agents):
         agent = AgentEntity(
-            x=P[0, env_id, 0, i, 0],
-            y=P[0, env_id, 0, i, 1],
-            radius=8,
-            neighborhood_radius=90,
-            color=(0, 0, 0, 255),
+            x=P[0, env_id, i, 0],
+            y=P[0, env_id, i, 1],
+            radius=10,
+            neighborhood_radius=15,
+            color=(180, 0, 10, 255),
             batch=batch,
         )
         Agents.append(agent)
 
     n_p = 10
-    for i in range(n_p-1):
-        G = GG.eval(i/n_p)
+    for i in range(n_p - 1):
+        G = GG.eval(i / n_p)
         pos = pg.shapes.Star(
             x=G[0, env_id, 0],
             y=G[0, env_id, 1],
@@ -62,30 +62,36 @@ def reset(env, P, L, GG, batch, env_id=0):
         )
         Goal.append(pos)
     G = GG.eval(1.0)
-    goal = pg.shapes.Star(x=G[0,env_id,0],y=G[0,env_id,1], \
-                        outer_radius=5, inner_radius = 10, num_spikes=5,color=(200,200,0,255), batch=batch)
+    goal = pg.shapes.Star(
+        x=G[0, env_id, 0],
+        y=G[0, env_id, 1],
+        outer_radius=5,
+        inner_radius=10,
+        num_spikes=5,
+        color=(200, 200, 0, 255),
+        batch=batch,
+    )
     Goal.append(goal)
 
 
-def render(env, obs, record=False):
+def render(env, state, record=False):
     # Check for instance of observations array, if jax.array cast it to numpy for fast access.
-    P = obs[0]
-    L = obs[1]
-    GG = obs[2]
+    P = state.X
+    V = state.X_dot
+    L = state.leader
+    GG = state.curve
 
     if isinstance(P, chex.Array):
         P = np.array(P)
 
+    if isinstance(V, chex.Array):
+        V = np.array(V)
+
     if isinstance(L, chex.Array):
         L = np.array(L)
 
-    if isinstance(GG, chex.Array):
-        GG = np.array(GG)
-
-    
     if record:
-        os.makedirs('record', exist_ok=True)
-
+        os.makedirs("record", exist_ok=True)
 
     window = pg.window.Window(800, 800, caption="Swarm simulation")
     fps = pg.window.FPSDisplay(window=window)
@@ -114,8 +120,8 @@ def render(env, obs, record=False):
             Goal = []
 
             env_id[0] += 1
-            if env_id[0] >= env.params["settings"]["n_env"] - 1:
-                env_id[0] = env.params["settings"]["n_env"] - 1
+            if env_id[0] >= env.params.settings["n_env"] - 1:
+                env_id[0] = env.params.settings["n_env"] - 1
             reset(env, P, L, GG, batch, env_id[0])
 
         if symbol == pg.window.key.DOWN:
@@ -133,7 +139,6 @@ def render(env, obs, record=False):
 
         if symbol == pg.window.key.S:
             window.simulationClock.schedule_interval(update, 1 / 60)
-            
 
     @window.event
     def on_draw():
@@ -145,14 +150,12 @@ def render(env, obs, record=False):
     def update(dt):
         window.clear()
         for i in range(env.n_scripted):
-            ScriptedEntities[i].update(
-                P[t[0], env_id[0], 0, i], P[t[0], env_id[0], 1, i]
-            )
+            ScriptedEntities[i].update(P[t[0], env_id[0], i], V[t[0], env_id[0], i])
 
         for i in range(env.n_agents):
             Agents[i].update(
-                P[t[0], env_id[0], 0, env.n_scripted + i],
-                P[t[0], env_id[0], 1, env.n_scripted + i],
+                P[t[0], env_id[0], env.n_scripted + i],
+                V[t[0], env_id[0], env.n_scripted + i],
             )
 
         batch.draw()
@@ -164,9 +167,10 @@ def render(env, obs, record=False):
             )
         t[0] += 1
 
-        t[0] %= env.params["scenario"]["episode_size"]
+        t[0] %= env.params.scenario["episode_size"]
 
     pg.app.run()
+
 
 def gauss2d(mu, sigma, to_plot=False):
     w, h = 100, 100
@@ -183,7 +187,7 @@ def gauss2d(mu, sigma, to_plot=False):
 
     normal_rv = multivariate_normal(mu, sigma)
     z = normal_rv.pdf(xy)
-    z = z.reshape(w, h, order='F')
+    z = z.reshape(w, h, order="F")
 
     if to_plot:
         plt.contourf(x, y, z.T)
@@ -191,8 +195,8 @@ def gauss2d(mu, sigma, to_plot=False):
 
     return plt.contourf(x, y, z.T)
 
-def matplotlib_render(env, obs, record=False):
 
+def matplotlib_render(env, obs, record=False):
     P = obs[0]
     L = obs[1]
     GG = obs[2]
@@ -206,7 +210,6 @@ def matplotlib_render(env, obs, record=False):
     if isinstance(GG, chex.Array):
         GG = np.array(GG)
 
-
     fig, ax = plt.subplots()
     ax.set_xlim(0, 800)  # Set x-axis limits
     ax.set_ylim(0, 800)  # Set y-axis limits
@@ -214,13 +217,13 @@ def matplotlib_render(env, obs, record=False):
     # Generate initial data for the scatter plot
 
     n_env = 0
-    print(P[:,n_env,0,:,0])
+    print(P[:, n_env, 0, :, 0])
 
-    x_data = P[0,n_env,0,:,0]
-    y_data = P[0,n_env,0,:,1]
+    x_data = P[0, n_env, 0, :, 0]
+    y_data = P[0, n_env, 0, :, 1]
 
     mean = [5, 5]  # Mean of the distribution (centered at x=5, y=5)
-    covariance = [75.0, 90.0] # Covariance matrix
+    covariance = [75.0, 90.0]  # Covariance matrix
 
     # Create a grid of points for the 2D normal distribution
     x, y = np.meshgrid(np.linspace(0, 10, 100), np.linspace(0, 10, 100))
@@ -230,22 +233,20 @@ def matplotlib_render(env, obs, record=False):
     rv = multivariate_normal(mean, [[2.0, 0.3], [0.3, 0.5]])
     z = rv.pdf(pos)
 
-    #z = gauss2d(MU, SIGMA, True)
+    # z = gauss2d(MU, SIGMA, True)
     scatter = ax.scatter(x_data, y_data)  # Initial scatter plot
 
-
     # Plot the 2D normal distribution as a contour plot
-    contour = ax.contourf(x, y, z, cmap='viridis', alpha=0.5)
+    contour = ax.contourf(x, y, z, cmap="viridis", alpha=0.5)
 
     # Define the update function for the animation
     def update(frame):
-    #    # Update the x and y coordinates of the scatter plot with new random values
-        scatter.set_offsets(P[frame,n_env,0,:,:])
-
+        #    # Update the x and y coordinates of the scatter plot with new random values
+        scatter.set_offsets(P[frame, n_env, 0, :, :])
 
         # Update the contour plot (2D normal distribution)
         z = rv.pdf(pos + frame * 0.1)  # Shift the distribution over time
-        contour = ax.contourf(x, y, z, cmap='viridis', alpha=0.5)
+        contour = ax.contourf(x, y, z, cmap="viridis", alpha=0.5)
 
         return scatter, contour
 

@@ -30,26 +30,31 @@ class Discrete(Space):
         - `dtype: (Union[jnp.float32, jnp.int32])`: Datatype of the action.
     """
 
-    actions: chex.Array
-    mapping: chex.Scalar
+    actions: chex.ArrayDevice
     dtype: Union[jnp.float32, jnp.int32]
+    mapping: chex.Scalar
 
     def __init__(self, act_range: Sequence, dtype=jnp.float32, mapping=0):
-        """tt
+        """A discrete space of possible actions.
 
         `Args`:
-            - dimension (int): _description_
-            - dtype (_type_, optional): _description_. Defaults to jnp.float32.
+            - act_range (int): Range of possible actions.
+            - dtype (_type_, optional): Data format. Defaults to jnp.float32.
             - mapping (int, optional): _description_. Defaults to 0.
         """
         self.actions = jnp.linspace(*act_range)
-        self.mapping = mapping
         self.dtype = dtype
+        self.mapping = mapping
 
     @eqx.filter_jit
-    def sample(self, key: chex.PRNGKey, shape: Tuple) -> chex.Array:
+    def sample_old(self, key: chex.PRNGKey, shape: Tuple) -> chex.Array:
         """Sample random action uniformly from set of categorical choices."""
         return jrandom.choice(key, self.actions, shape=shape)
+
+    @eqx.filter_jit
+    def sample(self, key: chex.PRNGKey) -> chex.Array:
+        """Sample random action uniformly from set of categorical choices."""
+        return jrandom.choice(key, self.actions, shape=self.shape)
 
     @property
     def size(self) -> int:
@@ -73,7 +78,7 @@ class MultiDiscrete(Space):
         - `dtype: (Union[jnp.float32, jnp.int32])`: Datatype of the action.
     """
 
-    actions: chex.Array
+    actions: chex.ArrayDevice
     mapping: chex.Scalar
     dtype: Union[jnp.float32, jnp.int32]
 
@@ -89,14 +94,18 @@ class MultiDiscrete(Space):
 
         X, Y = jnp.mgrid[low : high + 0.1 : step, low : high + 0.1 : step]
         self.actions = jnp.vstack((X.flatten(), Y.flatten())).T
-
-        self.mapping = mapping
         self.dtype = dtype
+        self.mapping = mapping
 
     @eqx.filter_jit
-    def sample(self, key: chex.PRNGKey, shape: Tuple) -> chex.Array:
+    def sample_old(self, key: chex.PRNGKey, shape: Tuple) -> chex.Array:
         """Sample random action uniformly from set of categorical choices."""
         return jrandom.choice(key, self.actions, shape=shape)
+
+    @eqx.filter_jit
+    def sample(self, key: chex.PRNGKey) -> chex.Array:
+        """Sample random action uniformly from set of categorical choices."""
+        return jrandom.choice(key, self.actions, shape=self.shape)
 
     def contains(self, x: int) -> chex.Array:
         """Check whether specific object is within space."""
@@ -114,7 +123,7 @@ class MultiDiscrete(Space):
         return self.actions.shape[0]
 
     def __repr__(self):
-        return f"{__class__.__name__}({self.actions}, {self.dtype})"
+        return f"{__class__.__name__}({self.actions.shape}, {self.actions}, {self.dtype})"
 
 
 class Box(Space):

@@ -20,12 +20,11 @@ class BatchManager(object):
         state_space,
     ):
         self.discount = discount
-        self.gae_lambda = gae_lambda
         self.n_steps = n_steps
-        self.num_envs = num_envs
         self.num_envs = num_envs
         self.action_size = action_size
         self.buffer_size = num_envs * n_steps
+        self.gae_lambda = gae_lambda
 
         try:
             temp = state_space.shape[0]

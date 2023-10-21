@@ -9,12 +9,7 @@ import jax.numpy as jnp
 class Trainer:
     def __init__(self, env, key):
         self.env = env
-        input_dim = self.env.observation_space.size * (
-            self.env.n_agents + self.env.n_scripted
-        )
-        output_dim_actor = self.env.action_space.size
-
-        model = A2CNet(input_dim, output_dim_actor, key)
+        model = A2CNet(self.env.observation_space.size, self.env.action_space.size, key)
         self.r_manager = RolloutManager(model, env)
         """
         b_manager = BatchManager(discount, 
@@ -27,8 +22,8 @@ class Trainer:
 
     def __call__(self, key):
         # Run a rollout for a batch of environments
-        obs, act, batch_reward = self.r_manager.batch_evaluate(
-            key, self.env.params["settings"]["n_env"]
+        obs, state, act, batch_reward = self.r_manager.batch_evaluate(
+            key, self.env.params.settings["n_env"]
         )
 
-        return (obs, act, batch_reward)
+        return (obs, state, act, batch_reward)

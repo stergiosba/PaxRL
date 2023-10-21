@@ -8,7 +8,7 @@ from typing import Union
 class BezierCurve3(eqx.Module):
     points: chex.ArrayDevice
 
-    def __init__(self, points):
+    def __init__(self, points: chex.ArrayDevice):
         self.points = points
 
     @jit
