@@ -1,0 +1,5 @@
+[params]
+discount=0.99
+gae_lambda=0.95
+n_steps = 1000
+num_envs = 4

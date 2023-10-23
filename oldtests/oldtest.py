@@ -14,17 +14,18 @@ def test_1(console_args):
 
     key_input = jrandom.PRNGKey(env.params.settings["seed"])
     key, key_model = jrandom.split(key_input)
-    trainer = Trainer(env, key_model)
+    trainer = Trainer(env, key_model, "train_cfg")
 
     s = time.time()
     (obs, state, act, batch_reward) = trainer(key)
+
     print(f"Time for trainer: {time.time()-s}")
 
     if console_args.render in ["human", "Human", "h", "H"]:
-        render(env, state, record=False)
+        render(env, state, record=env.params.settings["record"])
 
-    elif console_args.render in ["matplotlibe", "m", "M", "mat"]:
-        matplotlib_render(env, state, record=False)
+    elif console_args.render in ["matplotlib", "m", "M", "mat"]:
+        matplotlib_render(env, state)
 
 
 TESTS = {"1": test_1}

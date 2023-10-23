@@ -144,6 +144,13 @@ class Environment(eqx.Module):
         Returns:
             - `environment_step Tuple[Sequence[chex.Array], EnvState, chex.Array, chex.Array])`: A step in the environment.
         """
+        @jit
+        def r_std(X):
+            return 5*jnp.exp(-0.2*(50-la.norm(jnp.std(X[:-1], axis=0)))**2)
+
+        def r_std2(X):
+            return jnp.tanh(-50+la.norm(jnp.std(X[:-1], axis=0)))
+        
 
         dt = self.params.settings["dt"]
 
@@ -157,8 +164,8 @@ class Environment(eqx.Module):
         state = EnvState(X, X_dot, state.leader, state.curve, state.t + 1)  # type: ignore
 
         obs = self.get_obs(state)
-
-        reward = lax.select(state.t <= 500, jnp.array([-1.0]), jnp.array([-2.0]))
+        reward = lax.select(state.t <= 500, jnp.array([-1.0]), jnp.array([-2.0]))+r_std(X)
+        dprint("{x}|{y}",x=reward, y=r_std(X))
 
         # The state.curve(1.0) is the final goal
         norm_e = la.norm(state.curve.eval(1.0) - X[state.leader])

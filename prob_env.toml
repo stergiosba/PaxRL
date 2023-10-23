@@ -2,12 +2,21 @@
     seed = 6251
     n_env = 4
     dt = 0.05
+    record = true
 
 [scenario]
     n_agents = 1
     n_scripted_entities = 21
     episode_size = 1000
     agent_radius = 30
+    ldr_radius = 120
+    prb_radius = 45
+    ldr_str = 50
+    w_c = 0.6
+    w_a = 0.7
+    w_s = 1.0
+    Kp_l = 2
+    Kp_p = 2
 
 [action_space]
     low = -100
@@ -20,4 +29,3 @@
 
 [critic_network]
     hidden_layers = [64, 32]
-    activations = ["relu", "relu"]

@@ -70,13 +70,13 @@ class RolloutManager(object):
         # Reset the environments
         key_rst, key_ep = jax.random.split(key_input)
         obs, state = self.batch_reset(jax.random.split(key_rst, num_envs))
-        dprint("{o}",o=obs.shape)
+        
         def policy_step(state_input, _):
             """lax.scan compatible step transition in jax env."""
             obs, state, key, cum_reward, valid_mask = state_input
             key, key_step, key_net = jax.random.split(key, 3)
 
-            action = script(state, self.env.params.settings)
+            action = script(state, self.env.params)
 
             #prober_action, log_prob, value, key_net = self.policy(obs[1].flatten(), key_net)
             #action = action.at[jnp.arange(num_envs), -1].set(prober_action)
