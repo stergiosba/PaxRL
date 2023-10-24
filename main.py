@@ -21,7 +21,7 @@ device = parser.add_argument('-d', '--device', type=str, default="cpu", dest="de
 
 test = parser.add_argument('-t', '--test', type=str, default=1, dest="test", help='Choose a test (Default: 1)')
 
-#profile = parser.add_argument('-p', '--profile', type=str, default="", dest="profile", help='Choose if code is profiled by specifying a directory')
+profile = parser.add_argument('-p', '--profile', type=str, default="", dest="profile", help='Choose if code is profiled by specifying a directory')
 parser.print_help()
 args = parser.parse_args()
 

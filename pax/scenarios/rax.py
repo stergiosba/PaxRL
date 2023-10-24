@@ -201,7 +201,7 @@ def separation_steer(
 def interaction_steer(
     X: chex.ArrayDevice,
     corr_dist_mat: chex.ArrayDevice,
-    max_force: float = 300,
+    max_force: float = 60,
     eps: float = 10**-8,
 ) -> chex.ArrayDevice:
     """Separation calculations of `Rax`: Leader modified Reynolds flocking model in Jax.
@@ -313,14 +313,14 @@ def swarm_leader(X, leader):
 @jit
 def closest_agent(X):
     n_env, _, _ = X.shape
-    closest = la.norm(X - X[jnp.arange(n_env), None, -1], axis=-1)
+    closest = la.norm(X - X[jnp.arange(n_env), None, -1], axis=-1)[:,:-1]
 
-    return closest
+    return X[jnp.arange(n_env), jnp.argmin(closest,axis=1)]
 
 @jit
 def swarm_center(X):
     n_env, _, _ = X.shape
-    return jnp.mean(X[jnp.arange(n_env), 0:-2], axis=1)
+    return jnp.mean(X[jnp.arange(n_env), 0:-1], axis=1)
 
 @jit 
 def reynolds_dynamics_rk4(state, params):
@@ -377,8 +377,8 @@ def script(state: EnvState, params: EnvParams, *args) -> Tuple[chex.ArrayDevice,
     steer = steer.at[jnp.arange(n_env), leader].set(
         steer[jnp.arange(n_env), leader] + u_leader
     )
-
-    e_prob = swarm_center(X) - X[jnp.arange(n_env), -1]
+    #dprint("{x}",x=closest_agent(X))
+    e_prob = 0.7*swarm_center(X) +0.3*closest_agent(X)- X[jnp.arange(n_env), -1]
     u_prob = params.scenario["Kp_p"] * e_prob
     steer = steer.at[jnp.arange(n_env), -1].set(steer[jnp.arange(n_env), -1] + u_prob)
     

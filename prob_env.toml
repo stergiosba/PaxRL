@@ -1,6 +1,6 @@
 [settings]
     seed = 6251
-    n_env = 4
+    n_env = 200
     dt = 0.05
     record = true
 
@@ -10,7 +10,7 @@
     episode_size = 1000
     agent_radius = 30
     ldr_radius = 120
-    prb_radius = 45
+    prb_radius = 60
     ldr_str = 50
     w_c = 0.6
     w_a = 0.7

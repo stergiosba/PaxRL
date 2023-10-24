@@ -17,7 +17,13 @@ def test_1(console_args):
     trainer = Trainer(env, key_model, "train_cfg")
 
     s = time.time()
-    (obs, state, act, batch_reward) = trainer(key)
+    if console_args.profile == "y":
+        with jax.profiler.trace("/tmp/tensorboard"):
+            # Run the operations to be profiled
+            (obs, state, act, batch_reward) = trainer(key)
+            obs.block_until_ready()
+    else:
+        (obs, state, act, batch_reward) = trainer(key)
 
     print(f"Time for trainer: {time.time()-s}")
 

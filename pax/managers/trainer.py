@@ -31,29 +31,27 @@ class Trainer:
         )
 
     def __call__(self, key):
-        '''
+        
         batch = self.b_manager.reset()
 
         rng, rng_step, rng_reset, rng_eval, rng_update = jrandom.split(key, 5)
 
         # Reset a batch of environments
-        obs, state, act, batch_reward = self.r_manager.batch_reset(
-            rng_reset, self.env.params.settings["n_env"]
-        )
-
+        #obs, state, act, batch_reward = self.r_manager.batch_reset(
+        #    rng_reset, self.env.params.settings["n_env"]
+        #)
+        #obs, state = self.batch_reset(jax.random.split(rng_reset, self.env.params.settings["n_env"]))
+        
         total_steps = 0
         log_steps, log_return = [], []
         T = tqdm(range(self.train_cfg["params"]["n_steps"]), colour="#FFA500", desc="PPO", leave=True)
-
+        
         for step in T:
             total_steps += self.env.params.settings["n_env"]
-            time.sleep(0.01)
+            # Run a rollout for a batch of environments
 
-        '''
-        
-        # Run a rollout for a batch of environments
-        obs, state, act, batch_reward = self.r_manager.batch_evaluate(
-            key, self.env.params.settings["n_env"]
-        )
-
+            obs, state, act, batch_reward = self.r_manager.batch_evaluate(
+                key, self.env.params.settings["n_env"])
+            
+        print(total_steps)
         return (obs, state, act, batch_reward)

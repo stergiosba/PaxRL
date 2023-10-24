@@ -42,7 +42,7 @@ def reset(env, P, L, GG, batch, env_id=0):
             x=P[0, env_id, i, 0],
             y=P[0, env_id, i, 1],
             radius=10,
-            neighborhood_radius=15,
+            neighborhood_radius=60,
             color=(180, 0, 10, 255),
             batch=batch,
         )
@@ -149,6 +149,7 @@ def render(env, state, record=False):
 
     def update(dt):
         window.clear()
+
         for i in range(env.n_scripted):
             ScriptedEntities[i].update(P[t[0], env_id[0], i], V[t[0], env_id[0], i])
 
@@ -165,9 +166,13 @@ def render(env, state, record=False):
             pg.image.get_buffer_manager().get_color_buffer().save(
                 f"record/frame_{t[0]}.png"
             )
-        t[0] += 1
+        if t[0] == env.params.scenario["episode_size"]-1:
+            t[0] == env.params.scenario["episode_size"]-1
+        else:
+            t[0] += 1
 
-        t[0] %= env.params.scenario["episode_size"]
+
+        #t[0] %= env.params.scenario["episode_size"]
 
     pg.app.run()
 

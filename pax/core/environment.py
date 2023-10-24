@@ -165,7 +165,7 @@ class Environment(eqx.Module):
 
         obs = self.get_obs(state)
         reward = lax.select(state.t <= 500, jnp.array([-1.0]), jnp.array([-2.0]))+r_std(X)
-        dprint("{x}|{y}",x=reward, y=r_std(X))
+        #dprint("{x}|{y}",x=reward, y=r_std(X))
 
         # The state.curve(1.0) is the final goal
         norm_e = la.norm(state.curve.eval(1.0) - X[state.leader])

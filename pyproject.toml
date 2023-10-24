@@ -6,9 +6,8 @@ authors = ["Stergios Bachoumas <stevbach@udel.edu>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.10, <3.12"
 numpy = "1.25.2"
-jaxlib = {url= "https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.14+cuda12.cudnn89-cp310-cp310-manylinux2014_x86_64.whl"}
 flake8 = "^6.1.0"
 equinox = "^0.10.11"
 pyglet = "^2.0.9"
@@ -16,18 +15,19 @@ tqdm = "^4.66.1"
 tomli = "^2.0.1"
 matplotlib = "^3.7.2"
 optax = "^0.1.7"
-jaxtyping = "^0.2.23"
-pyqt5 = "^5.15.9"
 jaxopt = "^0.8.1"
 casadi = "^3.6.3"
 cython = "^3.0.3"
 setuptools = "^68.2.2"
+jaxlib = {url = "https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.19+cuda12.cudnn89-cp310-cp310-manylinux2014_x86_64.whl"}
 
 [tool.poetry.dev-dependencies]
 pytest = "^7"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.25.2"
+tensorflow = "^2.14.0"
+tensorboard-plugin-profile = "^2.14.0"
 
 [build-system]
 requires = ["poetry-core"]
