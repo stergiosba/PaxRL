@@ -1,5 +1,10 @@
-[params]
+[ppo_params]
 discount=0.99
 gae_lambda=0.95
-n_steps = 1000
+n_steps = 10
 num_envs = 200
+
+[optax_params]
+lr_begin = 0.0001
+lr_end = 0.001
+max_grad_norm = 1.0

@@ -5,6 +5,7 @@ from pax.managers.batch import BatchManager
 from pax.models.mlp import A2CNet
 import jax.random as jrandom
 import jax.numpy as jnp
+from jax import jit
 import tomli
 from tqdm import tqdm
 import time
@@ -32,6 +33,17 @@ class Trainer:
 
     def __call__(self, key):
         
+        @jit
+        def get_transition(obs, state, batch, key):
+            # Run a rollout for a batch of environments
+            obs, state, act, batch_reward = self.r_manager.batch_evaluate(
+                key, self.env.params.settings["n_env"]
+            )
+            # Add the rollout to the buffer
+            batch = self.b_manager.append(batch, obs, act, batch_reward, state)
+            return obs, state, batch
+        
+
         batch = self.b_manager.reset()
 
         rng, rng_step, rng_reset, rng_eval, rng_update = jrandom.split(key, 5)
@@ -53,5 +65,9 @@ class Trainer:
             obs, state, act, batch_reward = self.r_manager.batch_evaluate(
                 key, self.env.params.settings["n_env"])
             
-        print(total_steps)
+            self.b_manager.append(batch, obs, act, batch_reward, state)
+
+            
+        print(batch)
         return (obs, state, act, batch_reward)
+

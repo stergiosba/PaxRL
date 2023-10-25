@@ -38,18 +38,18 @@ class RolloutManager(object):
     def batch_step(self, state: EnvState, action):
         return jax.vmap(self.env.step, in_axes=(0, 0))(state, action)
 
-    # Deprecated
+    # Slower than batch_evaluate but maybe useful in the future for other applications
     def batch_evaluate_loopy(self, key_input: chex.PRNGKey, num_envs: int):
         key_rst, key_ep = jax.random.split(key_input)
         O = []
+        S = []
         obs, state = self.batch_reset(jax.random.split(key_rst, num_envs))
-        O.append(obs[0])
+        O.append(obs)
+        S.append(state)
         cum_re = jnp.array(num_envs * [0.0])[:, None]
         valid_mask = jnp.array(num_envs * [1.0])[:, None]
 
-        m = self.env.params["scenario"]["episode_size"]
-
-        for episode_step in range(m):
+        for episode_step in range(self.env.params.scenario["episode_size"]):
             key, key_step, key_net = jax.random.split(key_ep, 3)
             # action, _, _, key = self.select_action(obs, key_net)
             action = script(state, self.env.params)
@@ -60,9 +60,9 @@ class RolloutManager(object):
             )
             cum_re = cum_re + reward * valid_mask
             valid_mask = valid_mask * (1 - done)
-            O.append(obs[0])
-
-        return jnp.array(O), action, jnp.mean(cum_re)
+            O.append(obs)
+            S.append(state)
+        return O, S, action, jnp.mean(cum_re)
 
     @eqx.filter_jit
     def batch_evaluate(self, key_input: chex.PRNGKey, num_envs: int):

@@ -26,23 +26,6 @@ class BatchManager(object):
         self.reset()
 
     @eqx.filter_jit
-    def reset2(self):
-        return {
-            "states": jnp.empty(
-                (self.n_steps, self.num_envs, *self.state_shape),
-                dtype=jnp.float32,
-            ),
-            "actions": jnp.empty(
-                (self.n_steps, self.num_envs, *self.action_size),
-            ),
-            "rewards": jnp.empty((self.n_steps, self.num_envs), dtype=jnp.float32),
-            "dones": jnp.empty((self.n_steps, self.num_envs), dtype=jnp.uint8),
-            "log_pis_old": jnp.empty((self.n_steps, self.num_envs), dtype=jnp.float32),
-            "values_old": jnp.empty((self.n_steps, self.num_envs), dtype=jnp.float32),
-            "_step": 0,
-        }
-
-    @eqx.filter_jit
     def reset(self):
         return {
             "states": jnp.empty(
@@ -88,6 +71,7 @@ class BatchManager(object):
         )
         return batch
 
+    # Apparently this is faster than the one provided by Google with scan.
     @eqx.filter_jit
     def calculate_gae(
         self, value: chex.ArrayDevice, reward: chex.ArrayDevice, done: chex.ArrayDevice
