@@ -1,6 +1,6 @@
 [settings]
     seed = 6251
-    n_env = 200
+    n_env = 5
     dt = 0.05
     record = true
 

@@ -2,16 +2,19 @@ import chex
 import jax
 import jax.numpy as jnp
 import equinox as eqx
+import pax.training as tpax
 from typing import Any, Callable, Tuple
 from jax.debug import print as dprint  # type: ignore
 from pax.core.environment import Environment
 from pax.scenarios.rax import script
 from pax.core.state import EnvState
 
+# from pax.training.models import A2CNet
+
 
 # should this be eqx
 class RolloutManager(object):
-    def __init__(self, model, env: Environment):
+    def __init__(self, model: eqx.Module, env: Environment):
         # Setup functionalities for vectorized batch rollout
         self.env = env
         self.observation_space = self.env.observation_space
@@ -23,16 +26,24 @@ class RolloutManager(object):
         return self.env.action_space.sample(key, shape=(num_envs, self.env.n_agents))
 
     @eqx.filter_jit
-    def policy(
-        self, obs: chex.Array, key: chex.PRNGKey
-    ) -> Tuple[chex.Array, chex.Array, chex.Array, chex.PRNGKey]:
-        value, pi, log_prob = self.model(obs, key)
-        action = self.env.action_space.actions[pi]
-        return action, log_prob, value, key
+    def select_action_ppo(
+        self,
+        obs: chex.ArrayDevice,
+        key: jax.random.PRNGKey,
+    ) -> Tuple[
+        chex.ArrayDevice, chex.ArrayDevice, chex.ArrayDevice, jax.random.PRNGKey
+    ]:
+        print(self.model)
+        value, pi = self.model(obs, key)
+        action = pi.sample(seed=key)
+        log_prob = pi.log_prob(action)
+        return action, log_prob, value[:, 0], key
 
     @eqx.filter_jit
-    def batch_reset(self, keys: chex.PRNGKey):
-        return jax.vmap(self.env.reset, in_axes=(0))(keys)
+    def batch_reset(self, key_reset: chex.PRNGKey, num_envs: int):
+        return jax.vmap(self.env.reset, in_axes=(0))(
+            jax.random.split(key_reset, num_envs)
+        )
 
     @eqx.filter_jit
     def batch_step(self, state: EnvState, action):
@@ -70,7 +81,7 @@ class RolloutManager(object):
         # Reset the environments
         key_rst, key_ep = jax.random.split(key_input)
         obs, state = self.batch_reset(jax.random.split(key_rst, num_envs))
-        
+
         def policy_step(state_input, _):
             """lax.scan compatible step transition in jax env."""
             obs, state, key, cum_reward, valid_mask = state_input
@@ -78,8 +89,10 @@ class RolloutManager(object):
 
             action = script(state, self.env.params)
 
-            #prober_action, log_prob, value, key_net = self.policy(obs[1].flatten(), key_net)
-            #action = action.at[jnp.arange(num_envs), -1].set(prober_action)
+            prober_action, log_prob, value, key_net = self.policy(
+                obs[1].flatten(), key_net
+            )
+            # action = action.at[jnp.arange(num_envs), -1].set(prober_action)
 
             next_o, next_s, reward, done = self.batch_step(
                 state,
@@ -94,7 +107,8 @@ class RolloutManager(object):
                 new_cum_reward,
                 new_valid_mask,
             ]
-            y = [next_o, next_s, action, new_valid_mask]
+            # y = [next_o, next_s, action, new_valid_mask, done, log_prob, value]
+            y = [new_valid_mask]
             return carry, y
 
         # Scan over episode step loop
@@ -110,9 +124,10 @@ class RolloutManager(object):
             (),
             self.env.params.scenario["episode_size"],
         )
-        obs, state, action, _ = scan_out
+        # obs, state, action, _, done, log_prob, value = scan_out
         cum_return = carry_out[-2].squeeze()
-        return obs, state, action, jnp.mean(cum_return)
+        return carry_out[0], jnp.mean(cum_return)
+        return obs, state, action, jnp.mean(cum_return), done, log_prob, value
 
     def __repr__(self):
         return f"{__class__.__name__}: {str(self.__dict__)}"

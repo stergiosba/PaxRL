@@ -10,7 +10,7 @@ class TestBasic:
         return pax.make("tests/test_env")
 
     def test_version(self):
-        assert pax.__version__ == "0.1.0"
+        assert pax.__version__ == "0.2.0"
 
     def test_make(self, env_config):
         # Arrange

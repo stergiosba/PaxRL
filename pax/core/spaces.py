@@ -25,12 +25,12 @@ class Discrete(Space):
     Minimal jittable class for discrete spaces.
 
     `Attributes`:
-        - `actions (chex.Array)`: Discrete actions that can take lists.
+        - `categories (chex.Array)`: Discrete categories.
         - `mapping: (chex.Scalar)`: Possible mapping #TODO
         - `dtype: (Union[jnp.float32, jnp.int32])`: Datatype of the action.
     """
 
-    actions: chex.ArrayDevice
+    categories: chex.ArrayDevice
     dtype: Union[jnp.float32, jnp.int32]
     mapping: chex.Scalar
 
@@ -42,30 +42,30 @@ class Discrete(Space):
             - dtype (_type_, optional): Data format. Defaults to jnp.float32.
             - mapping (int, optional): _description_. Defaults to 0.
         """
-        self.actions = jnp.linspace(*act_range)
+        self.categories = jnp.linspace(*act_range)
         self.dtype = dtype
         self.mapping = mapping
 
     @eqx.filter_jit
     def sample_old(self, key: chex.PRNGKey, shape: Tuple) -> chex.Array:
         """Sample random action uniformly from set of categorical choices."""
-        return jrandom.choice(key, self.actions, shape=shape)
+        return jrandom.choice(key, self.categories, shape=shape)
 
     @eqx.filter_jit
     def sample(self, key: chex.PRNGKey) -> chex.Array:
         """Sample random action uniformly from set of categorical choices."""
-        return jrandom.choice(key, self.actions, shape=self.shape)
+        return jrandom.choice(key, self.categories, shape=self.shape)
 
     @property
     def size(self) -> int:
-        return self.actions.size
+        return self.categories.size
 
     @property
     def shape(self) -> Tuple:
-        return self.actions.shape
+        return self.categories.shape
 
     def __repr__(self):
-        return f"{__class__.__name__}({self.actions}, {self.dtype})"
+        return f"{__class__.__name__}({self.categories}, {self.dtype})"
 
 
 class MultiDiscrete(Space):
@@ -73,7 +73,7 @@ class MultiDiscrete(Space):
     Minimal jittable class for multi discrete spaces.
 
     `Attributes`:
-        - `actions (chex.Array)`: Discrete actions that can take lists.
+        - `categories (chex.Array)`: Discrete categories of the space.
         - `mapping: (chex.Scalar)`: Possible mapping #TODO
         - `dtype: (Union[jnp.float32, jnp.int32])`: Datatype of the action.
     """
@@ -93,19 +93,14 @@ class MultiDiscrete(Space):
         low, high, step = act_range
 
         X, Y = jnp.mgrid[low : high + 0.1 : step, low : high + 0.1 : step]
-        self.actions = jnp.vstack((X.flatten(), Y.flatten())).T
+        self.categories = jnp.vstack((X.flatten(), Y.flatten())).T
         self.dtype = dtype
         self.mapping = mapping
 
     @eqx.filter_jit
-    def sample_old(self, key: chex.PRNGKey, shape: Tuple) -> chex.Array:
-        """Sample random action uniformly from set of categorical choices."""
-        return jrandom.choice(key, self.actions, shape=shape)
-
-    @eqx.filter_jit
     def sample(self, key: chex.PRNGKey) -> chex.Array:
         """Sample random action uniformly from set of categorical choices."""
-        return jrandom.choice(key, self.actions, shape=self.shape)
+        return jrandom.choice(key, self.categories, shape=self.shape)
 
     def contains(self, x: int) -> chex.Array:
         """Check whether specific object is within space."""
@@ -116,14 +111,14 @@ class MultiDiscrete(Space):
 
     @property
     def shape(self) -> Tuple:
-        return self.actions.shape
+        return self.categories.shape
 
     @property
     def size(self) -> int:
-        return self.actions.shape[0]
+        return self.categories.shape[0]
 
     def __repr__(self):
-        return f"{__class__.__name__}({self.actions.shape}, {self.actions}, {self.dtype})"
+        return f"{__class__.__name__}({self.categories.shape}, {self.categories}, {self.dtype})"
 
 
 class Box(Space):

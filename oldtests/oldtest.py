@@ -3,8 +3,7 @@ import jax
 import jax.numpy as jnp
 import time
 from pax import make
-from pax.models.mlp import A2CNet
-from pax.managers.trainer import Trainer
+import pax.training as tpax
 from pax.render.render import render, matplotlib_render
 
 
@@ -14,16 +13,18 @@ def test_1(console_args):
 
     key_input = jrandom.PRNGKey(env.params.settings["seed"])
     key, key_model = jrandom.split(key_input)
-    trainer = Trainer(env, key_model, "train_cfg")
+    trainer = tpax.Trainer(env, key_model)
 
     s = time.time()
     if console_args.profile == "y":
         with jax.profiler.trace("/tmp/tensorboard"):
             # Run the operations to be profiled
-            (obs, state, act, batch_reward) = trainer(key)
+            (obs, state, act, batch_reward) = trainer(key, "train_cfg")
             obs.block_until_ready()
     else:
-        (obs, state, act, batch_reward) = trainer(key)
+        #(obs, state, act, batch_reward) = trainer(key)
+        obs, batch_reward = trainer(key)
+        print(obs, batch_reward)
 
     print(f"Time for trainer: {time.time()-s}")
 
