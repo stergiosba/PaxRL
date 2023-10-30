@@ -8,12 +8,12 @@ else
 fi
 
 echo "Installing PaxRL with device: $DEVICE for JAX"
-#pip install -r requirements.txt
+pip install -r requirements.txt
 if [ $DEVICE == "cpu" ]; then
     echo "Installing JAX for CPU"
-    #pip install --upgrade "jax[cpu]"
+    pip install --upgrade "jax[cpu]"
 
 elif [ $DEVICE == "gpu" ]; then
     echo "Installing JAX for GPU"
-    #pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+    pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 fi
