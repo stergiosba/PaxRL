@@ -8,50 +8,11 @@ from pax import make
 from typing import List
 from tensorflow_probability.substrates import jax as tfp
 
-class PolicyMLP(eqx.Module):
-    actor: List
-
-    def __init__(self, input_dim: int, output_dim: int, key: chex.PRNGKey):
-        # with open(f"{config_name}.toml", mode="rb") as model_file:
-        # env_params = tomli.load(model_file)["critic_network"]
-        #    crit_params = tomli.load(model_file)["critic_network"]
-
-        keys = jrandom.split(key, 3)
-        self.actor = [
-            eqx.nn.Linear(input_dim, 64, key=keys[0]),
-            jnn.relu,
-            eqx.nn.Linear(64, 32, key=keys[1]),
-            jnn.relu,
-            eqx.nn.Linear(32, output_dim, key=keys[2]),
-        ]
-
-        """
-        self.layers.append(eqx.nn.Linear(input_dim, crit_params["hidden_layers"][0], key=key))
-
-        for i, (layer, activation) in enumerate(zip(crit_params["hidden_layers"], crit_params["activations"])):
-            self.layers.append(eqx.nn.Linear(layer[0], layer[1], key=keys[i]))
-            self.layers.append(ACTIVATIONS[activation])
-        
-        """
-
-    def __call__(self, x, key):
-        x_a = x
-        for layer in self.actor:
-            x_a = layer(x_a)
-
-        pi = jrandom.categorical(key, logits=x_a)
-        log_prob = jnn.softmax(x_a)
-        return pi, log_prob
-
-
-class A2CNet(eqx.Module):
+class A2CNetMultidiscrete(eqx.Module):
     critic: List
     actor: List
 
     def __init__(self, input_dim: int, output_dim: int, key: chex.PRNGKey):
-        # with open(f"{config_name}.toml", mode="rb") as model_file:
-        # env_params = tomli.load(model_file)["critic_network"]
-        #    crit_params = tomli.load(model_file)["critic_network"]
 
         keys = jrandom.split(key, 6)
         self.critic = [
@@ -69,14 +30,6 @@ class A2CNet(eqx.Module):
             jnn.relu,
             eqx.nn.Linear(32, output_dim, key=keys[5]),
         ]
-        """
-        self.layers.append(eqx.nn.Linear(input_dim, crit_params["hidden_layers"][0], key=key))
-
-        for i, (layer, activation) in enumerate(zip(crit_params["hidden_layers"], crit_params["activations"])):
-            self.layers.append(eqx.nn.Linear(layer[0], layer[1], key=keys[i]))
-            self.layers.append(ACTIVATIONS[activation])
-        
-        """
 
     def __call__(self, x, key=None):
         x_v = x
@@ -96,7 +49,52 @@ class A2CNet(eqx.Module):
     def __repr__(self):
         return f"{__class__.__name__}: {str(self.__dict__)}"
 
-# TODO: Check if faster later
+
+class A2CNet(eqx.Module):
+    critic: List
+    actor: List
+
+    def __init__(self, input_dim: int, output_dim: int, key: chex.PRNGKey):
+        # with open(f"{config_name}.toml", mode="rb") as model_file:
+        # env_params = tomli.load(model_file)["critic_network"]
+        #    crit_params = tomli.load(model_file)["critic_network"]
+
+        keys = jrandom.split(key, 6)
+        self.critic = [
+            eqx.nn.Linear(input_dim, 64, key=keys[0]),
+            jnn.relu,
+            eqx.nn.Linear(64, 64, key=keys[1]),
+            jnn.relu,
+            eqx.nn.Linear(64, 1, key=keys[2]),
+        ]
+
+        self.actor = [
+            eqx.nn.Linear(input_dim, 64, key=keys[3]),
+            jnn.relu,
+            eqx.nn.Linear(64, 64, key=keys[4]),
+            jnn.relu,
+            eqx.nn.Linear(64, output_dim, key=keys[5]),
+        ]
+
+    def __call__(self, x, key=None):
+        x_v = x
+        x_a = x
+        for layer in self.critic:
+            x_v = layer(x_v)
+
+        for layer in self.actor:
+            x_a = layer(x_a)
+
+        value = x_v
+        pi = tfp.distributions.Categorical(logits=x_a)
+        #pi = jrandom.categorical(key, logits=x_a)
+        #log_prob = jnn.softmax(x_a)
+        return value, pi
+
+    def __repr__(self):
+        return f"{__class__.__name__}: {str(self.__dict__)}"
+
+# TODO: Check if faster later and this would also drop the need for tensorflow_probability
 @jit
 def categorical_entropy(logits):
     @jit

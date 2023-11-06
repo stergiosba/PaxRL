@@ -96,6 +96,33 @@ def render(env, state, record=False):
     window = pg.window.Window(800, 800, caption="Swarm simulation")
     fps = pg.window.FPSDisplay(window=window)
     batch = pg.graphics.Batch()
+    font_size = 28
+    time_prefix = f"Time:"
+    time_label = pg.text.Label(
+        f"{time_prefix} 0",
+        font_name="Arial",
+        font_size=font_size,
+        bold=True,
+        color=(30, 30, 30, 105),
+        x=window.width // 2,
+        y=font_size,
+        anchor_x="center",
+        anchor_y="center",
+        batch=batch
+    )
+    env_prefix = f"Env:"
+    env_label = pg.text.Label(
+        f"{env_prefix} 1",
+        font_name="Arial",
+        font_size=font_size,
+        bold=True,
+        color=(30, 30, 30, 105),
+        x=window.width // 2+300,
+        y=font_size,
+        anchor_x="center",
+        anchor_y="center",
+        batch=batch
+    )
     window.simulationClock = pg.clock
 
     # Created as lists so that they are global
@@ -121,7 +148,7 @@ def render(env, state, record=False):
 
             env_id[0] += 1
             if env_id[0] >= env.params.settings["n_env"] - 1:
-                env_id[0] = env.params.settings["n_env"] - 1
+                env_id[0] = 0
             reset(env, P, L, GG, batch, env_id[0])
 
         if symbol == pg.window.key.DOWN:
@@ -131,7 +158,7 @@ def render(env, state, record=False):
 
             env_id[0] -= 1
             if env_id[0] <= 0:
-                env_id[0] = 0
+                env_id[0] = env.params.settings["n_env"] - 1 
             reset(env, P, L, GG, batch, env_id[0])
 
         if symbol == pg.window.key.P:
@@ -160,19 +187,20 @@ def render(env, state, record=False):
             )
 
         batch.draw()
+        time_label.text = f"{time_prefix} {t[0]+1} [{100*(t[0]+1)/env.params.scenario['episode_size']:0.1f}%]"
+        env_label.text = f"{env_prefix} {env_id[0]+1}/{env.params.settings['n_env']}"
         pg.gl.glClearColor(1, 1, 1, 1)
 
         if record:
             pg.image.get_buffer_manager().get_color_buffer().save(
                 f"record/frame_{t[0]}.png"
             )
-        if t[0] == env.params.scenario["episode_size"]-1:
-            t[0] == env.params.scenario["episode_size"]-1
+        if t[0] == env.params.scenario["episode_size"] - 1:
+            t[0] == env.params.scenario["episode_size"] - 1
         else:
             t[0] += 1
 
-
-        #t[0] %= env.params.scenario["episode_size"]
+        # t[0] %= env.params.scenario["episode_size"]
 
     pg.app.run()
 

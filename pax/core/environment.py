@@ -51,12 +51,12 @@ class Environment(eqx.Module):
         self.n_scripted = self.params.scenario["n_scripted_entities"]
 
         action_range = self.params.action_space.values()
-        self.action_space = MultiDiscrete(action_range)  # type: ignore
+        self.action_space = MultiDiscrete(action_range)
 
         o_dtype = jnp.float32
         o_low, o_high = self.params.observation_space.values()
         o_shape = (self.n_agents + self.n_scripted, 2)
-        self.observation_space = Box(o_low, o_high, o_shape, o_dtype)  # type: ignore
+        self.observation_space = Box(o_low, o_high, o_shape, o_dtype)
 
     @eqx.filter_jit
     def get_obs(self, state: EnvState) -> Sequence[chex.Array]:
@@ -84,24 +84,21 @@ class Environment(eqx.Module):
         """
 
         init_X_scripted = jrandom.uniform(
-            key, minval=445, maxval=565, shape=(self.n_scripted, 2)
+            key, minval=450, maxval=550, shape=(self.n_scripted, 2)
         )
-        """
-        init_X_scripted = jnp.array([500,500])+jrandom.rayleigh(
-            key, scale=100, shape=(self.n_scripted, 2)
-        )
-        """
 
         init_X_dot_scripted = 5 * jrandom.uniform(
-            key, minval=-1, maxval=1, shape=(self.n_scripted, 2)
+            key, minval=-0, maxval=0, shape=(self.n_scripted, 2)
         )
+        
+        #init_X_dot_scripted = jnp.zeros((self.n_scripted, 2))
 
         init_X_agents = jnp.array([100, 700]) + jrandom.cauchy(
             key, shape=(self.n_agents, 2)
         )
 
         init_X_dot_agents = jrandom.uniform(
-            key, minval=-1, maxval=1, shape=(self.n_agents, 2)
+            key, minval=-0, maxval=0, shape=(self.n_agents, 2)
         ) * jnp.sqrt(400)
 
         # leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
@@ -109,13 +106,13 @@ class Environment(eqx.Module):
         final_goal = jrandom.uniform(key, minval=20, maxval=50, shape=(2,))
         init_leader = init_X_scripted[leader]
 
-        A = init_leader  # (init_leader+final_goal)/2
+        p0 = (4*init_leader+1*final_goal)/5
 
         P = jnp.array(
             [
-                A,
-                jnp.array([0, 500]) + (2 * A + final_goal) / 3,
-                (A + 2 * final_goal) / 3,
+                p0,
+                (2 * p0 + final_goal) / 3,
+                (p0 + 2 * final_goal) / 3,
                 final_goal,
             ]
         )
@@ -151,6 +148,13 @@ class Environment(eqx.Module):
         def r_std2(X):
             return jnp.tanh(-50+la.norm(jnp.std(X[:-1], axis=0)))
         
+        def r_close(X):
+            # a reward for how close the prober is to the swwarm
+            return 10*jnp.exp(-(25-la.norm(X[-1]-jnp.mean(X[:-1], axis=0)))**2)
+        
+        def r_leader_close(X):
+            # a reward for how close the final element is to the rest of the group
+            return 10*jnp.exp(-la.norm(X[-1]-X[state.leader])**2)
 
         dt = self.params.settings["dt"]
 
@@ -164,8 +168,7 @@ class Environment(eqx.Module):
         state = EnvState(X, X_dot, state.leader, state.curve, state.t + 1)  # type: ignore
 
         obs = self.get_obs(state)
-        reward = lax.select(state.t <= 500, jnp.array([-1.0]), jnp.array([-2.0]))+r_std(X)
-        #dprint("{x}|{y}",x=reward, y=r_std(X))
+        reward = jnp.array([-0.1])+r_leader_close(X)
 
         # The state.curve(1.0) is the final goal
         norm_e = la.norm(state.curve.eval(1.0) - X[state.leader])

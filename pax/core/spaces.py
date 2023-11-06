@@ -78,7 +78,7 @@ class MultiDiscrete(Space):
         - `dtype: (Union[jnp.float32, jnp.int32])`: Datatype of the action.
     """
 
-    actions: chex.ArrayDevice
+    categories: chex.ArrayDevice
     mapping: chex.Scalar
     dtype: Union[jnp.float32, jnp.int32]
 

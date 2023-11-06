@@ -8,8 +8,7 @@ from jax.debug import print as dprint  # type: ignore
 from pax.core.environment import Environment
 from pax.scenarios.rax import script
 from pax.core.state import EnvState
-
-# from pax.training.models import A2CNet
+from jax.debug import print as dprint
 
 
 # should this be eqx
@@ -33,9 +32,8 @@ class RolloutManager(object):
     ) -> Tuple[
         chex.ArrayDevice, chex.ArrayDevice, chex.ArrayDevice, jax.random.PRNGKey
     ]:
-        print(self.model)
         value, pi = self.model(obs, key)
-        action = pi.sample(seed=key)
+        action = self.env.action_space.categories[pi.sample(seed=key)]
         log_prob = pi.log_prob(action)
         return action, log_prob, value[:, 0], key
 
@@ -80,7 +78,7 @@ class RolloutManager(object):
         """Rollout an episode with lax.scan."""
         # Reset the environments
         key_rst, key_ep = jax.random.split(key_input)
-        obs, state = self.batch_reset(jax.random.split(key_rst, num_envs))
+        obs, state = self.batch_reset(key_rst, num_envs)
 
         def policy_step(state_input, _):
             """lax.scan compatible step transition in jax env."""
@@ -89,9 +87,9 @@ class RolloutManager(object):
 
             action = script(state, self.env.params)
 
-            prober_action, log_prob, value, key_net = self.policy(
-                obs[1].flatten(), key_net
-            )
+            # prober_action, log_prob, value, key_net = self.model(
+            #    obs, key_net
+            # )
             # action = action.at[jnp.arange(num_envs), -1].set(prober_action)
 
             next_o, next_s, reward, done = self.batch_step(
@@ -107,8 +105,8 @@ class RolloutManager(object):
                 new_cum_reward,
                 new_valid_mask,
             ]
-            # y = [next_o, next_s, action, new_valid_mask, done, log_prob, value]
-            y = [new_valid_mask]
+            y = [next_o, next_s, action, new_valid_mask, done, 1, 1]
+            #y = [new_valid_mask]
             return carry, y
 
         # Scan over episode step loop
@@ -124,9 +122,9 @@ class RolloutManager(object):
             (),
             self.env.params.scenario["episode_size"],
         )
-        # obs, state, action, _, done, log_prob, value = scan_out
+        obs, state, action, _, done, log_prob, value = scan_out
         cum_return = carry_out[-2].squeeze()
-        return carry_out[0], jnp.mean(cum_return)
+        #return carry_out[0], jnp.mean(cum_return)
         return obs, state, action, jnp.mean(cum_return), done, log_prob, value
 
     def __repr__(self):

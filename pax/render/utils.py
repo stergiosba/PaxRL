@@ -4,7 +4,7 @@ import numpy.linalg as la
 
 neighbourhood = True
 heading = True
-label = False
+label = True
 
 class CircleEntity(pg.shapes.Circle):
     def __init__(self, x, y, radius, neighborhood_radius, segments=None, color=..., batch=None, group=None):
@@ -27,7 +27,10 @@ class CircleEntity(pg.shapes.Circle):
             self.heading.y = self.y
             
             norm_v = la.norm(velocity)
-            e_v = velocity/norm_v
+            if norm_v == 0:
+                e_v = np.array([0, 0])
+            else:
+                e_v = velocity/norm_v
             self.heading.x2 = self.x+norm_v*e_v[0]
             self.heading.y2 = self.y+norm_v*e_v[1]
 
@@ -55,7 +58,10 @@ class TriangleEntity(pg.shapes.Triangle):
 
         if heading:
             norm_v = la.norm(velocity)
-            e_v = velocity/norm_v
+            if norm_v == 0:
+                e_v = np.array([0, 0])
+            else:
+                e_v = velocity/norm_v
 
             self.heading.x = self.x2
             self.heading.y = self.y2

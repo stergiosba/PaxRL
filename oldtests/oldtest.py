@@ -22,9 +22,10 @@ def test_1(console_args):
             (obs, state, act, batch_reward) = trainer(key, "train_cfg")
             obs.block_until_ready()
     else:
-        #(obs, state, act, batch_reward) = trainer(key)
-        obs, batch_reward = trainer(key)
-        print(obs, batch_reward)
+
+        obs, state, act, batch_reward, done, _, _ = trainer(key)
+        #obs, batch_reward = trainer(key)
+        #print(obs, batch_reward)
 
     print(f"Time for trainer: {time.time()-s}")
 
