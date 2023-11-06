@@ -148,7 +148,7 @@ def render(env, state, record=False):
 
             env_id[0] += 1
             if env_id[0] >= env.params.settings["n_env"] - 1:
-                env_id[0] = 0
+                env_id[0] = env.params.settings["n_env"] - 1
             reset(env, P, L, GG, batch, env_id[0])
 
         if symbol == pg.window.key.DOWN:
@@ -158,7 +158,7 @@ def render(env, state, record=False):
 
             env_id[0] -= 1
             if env_id[0] <= 0:
-                env_id[0] = env.params.settings["n_env"] - 1 
+                env_id[0] = 0
             reset(env, P, L, GG, batch, env_id[0])
 
         if symbol == pg.window.key.P:
