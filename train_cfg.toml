@@ -1,11 +1,23 @@
 [ppo_params]
-    total_timesteps=50
-    discount=0.99
-    gae_lambda=0.95
-    n_steps = 1
-    num_envs = 5
+    # General parameters
+    num_train_steps = 500000
+    evaluate_every_epochs = 200
 
-[optax_params]
-    lr_begin = 0.0001
-    lr_end = 0.001
+    num_test_rollouts = 164
+
+    # PPO parameters for learning
+    discount = 0.99 # "Discount factor for rewards"
+    gae_lambda = 0.95 # "Lambda for Generalized Advantage Estimation"
+    num_train_envs = 100 # "Number of environments for training"
+    n_steps = 256 # "Number of steps per environment per update"
+    n_minibatch = 8 # "Number of PPO minibatches"
+    epoch_ppo = 4 # "Number of epochs per PPO update"
+    clip_eps = 0.2 # "Clipping parameter for PPO"
+    entropy_coeff = 0.01 # "Entropy coefficient for loss calculation" 
+    critic_coeff = 0.5 # "Coefficient for critic loss"
+
+    # Optimizer parameters
+    lr_begin = 5e-04
+    lr_end = 5e-04
+    lr_warmup = 0.05 # Prop epochs until warmup is completed 
     max_grad_norm = 1.0

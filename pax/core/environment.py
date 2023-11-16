@@ -6,6 +6,7 @@ import jax.numpy.linalg as la
 from typing import Sequence, Union, Tuple, Sequence, Any, Dict
 from jax import jit, vmap, lax, devices
 from pax.core.spaces import *
+import jax.nn as jnn
 
 # from pax.scenarios.script_inter import script
 from jax.debug import print as dprint  # type: ignore
@@ -18,7 +19,6 @@ class EnvParams(eqx.Module):
     scenario: Dict
     action_space: Dict
     observation_space: Dict
-    critic_network: Dict
 
 
 class Environment(eqx.Module):
@@ -69,7 +69,7 @@ class Environment(eqx.Module):
             - `observation (chex.Array)`: The observable part of the state.
         """
 
-        return jnp.array(state.X)
+        return jnp.array(state.X).reshape(-1)
 
     @eqx.filter_jit
     def reset(self, key: chex.PRNGKey) -> Tuple[Sequence[chex.Array], EnvState]:
@@ -84,29 +84,35 @@ class Environment(eqx.Module):
         """
 
         init_X_scripted = jrandom.uniform(
-            key, minval=450, maxval=550, shape=(self.n_scripted, 2)
+            key, minval=jnp.array([75, 600]), maxval=jnp.array([125,700]), shape=(self.n_scripted, 2)
         )
 
-        init_X_dot_scripted = 5 * jrandom.uniform(
-            key, minval=-0, maxval=0, shape=(self.n_scripted, 2)
-        )
-        
-        #init_X_dot_scripted = jnp.zeros((self.n_scripted, 2))
+        # init_X_dot_scripted = 5 * jrandom.uniform(
+        #     key, minval=-0, maxval=0, shape=(self.n_scripted, 2)
+        # )
+        init_X_dot_scripted = jnp.zeros((self.n_scripted, 2))
 
-        init_X_agents = jnp.array([100, 700]) + jrandom.cauchy(
-            key, shape=(self.n_agents, 2)
+        #init_X_agents = jnp.array([[100, 600]])
+            # + jrandom.cauchy(
+            #     key, shape=(self.n_agents, 2)
+            # )
+        init_X_agents = jrandom.uniform(
+            key, minval=jnp.array([275, 100]), maxval=jnp.array([700,100]), shape=(self.n_agents, 2)
         )
 
         init_X_dot_agents = jrandom.uniform(
             key, minval=-0, maxval=0, shape=(self.n_agents, 2)
-        ) * jnp.sqrt(400)
+        ) * 10*jnp.sqrt(2)
 
-        # leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
+        #leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
         leader = jrandom.randint(key, shape=(), minval=0, maxval=0)
-        final_goal = jrandom.uniform(key, minval=20, maxval=50, shape=(2,))
+
+        final_goal = jrandom.uniform(
+            key, minval=jnp.array([300, 50]), maxval=jnp.array([750, 125]), shape=(2,)
+        )
         init_leader = init_X_scripted[leader]
 
-        p0 = (4*init_leader+1*final_goal)/5
+        p0 = (4 * init_leader + 1 * final_goal) / 5
 
         P = jnp.array(
             [
@@ -121,61 +127,76 @@ class Environment(eqx.Module):
 
         state = EnvState(
             X=jnp.concatenate([init_X_scripted, init_X_agents]),
+            X_prev=jnp.concatenate([init_X_scripted, init_X_agents]),
             X_dot=jnp.concatenate([init_X_dot_scripted, init_X_dot_agents]),
+            X_dot_prev=jnp.concatenate([init_X_dot_scripted, init_X_dot_agents]),
+            B=jnp.zeros(shape=self.n_scripted),
             leader=leader,
             curve=leader_path_curve,
-            t=0.0,
+            t=0,
         )
         return (self.get_obs(state), state)  # type: ignore
 
     @eqx.filter_jit
     def step(
-        self, state: EnvState, action: chex.Array
-    ) -> Tuple[Sequence[chex.Array], EnvState, chex.Array, chex.Array]:
+        self, key, state: EnvState, action: chex.ArrayDevice, extra_in: Any
+    ) -> Tuple[
+        Sequence[chex.ArrayDevice], EnvState, chex.ArrayDevice, chex.ArrayDevice
+    ]:
         """Performs one step in the environment
 
         `Args`:
+            - `key (chex.PRNGKey)`: A jax random key for the step. Currently unused (present for consistency)
             - `state (EnvState)`: State of the environment
             - `action (chex.Array)`: The joint action fro the agents and scripted entities.
 
         Returns:
             - `environment_step Tuple[Sequence[chex.Array], EnvState, chex.Array, chex.Array])`: A step in the environment.
         """
+
         @jit
-        def r_std(X):
-            return 5*jnp.exp(-0.2*(50-la.norm(jnp.std(X[:-1], axis=0)))**2)
-
-        def r_std2(X):
-            return jnp.tanh(-50+la.norm(jnp.std(X[:-1], axis=0)))
+        def r_max_interaction(B, leader):
+            P = jnn.softmax(B)
+            return 20*P[leader]-1
         
-        def r_close(X):
-            # a reward for how close the prober is to the swwarm
-            return 10*jnp.exp(-(25-la.norm(X[-1]-jnp.mean(X[:-1], axis=0)))**2)
-        
-        def r_leader_close(X):
-            # a reward for how close the final element is to the rest of the group
-            return 10*jnp.exp(-la.norm(X[-1]-X[state.leader])**2)
-
+        acc = action
+        new_B = extra_in[0]
         dt = self.params.settings["dt"]
+        X_dot_prev = state.X_dot
+        X_dot = state.X_dot + dt / 6 * acc  # - 0.01*state.X_dot
 
-        X_dot = state.X_dot + dt / 6 * action
-
-        X_dot = jnp.clip(X_dot, a_min=-20, a_max=20)
-
-        X = state.X + dt * X_dot  # / la.norm(X_dot, axis=1)[:, None]
+        X_dot = jnp.clip(X_dot, a_min=-10*jnp.sqrt(2), a_max=10*jnp.sqrt(2))
+        X_prev = state.X
+        X = state.X + dt * X_dot
         X = jnp.clip(X, a_min=0, a_max=800)
-
-        state = EnvState(X, X_dot, state.leader, state.curve, state.t + 1)  # type: ignore
+        #dprint("{x}",x=state.t)
+        state = EnvState(X, X_prev, X_dot, X_dot_prev, new_B, state.leader, state.curve, state.t + 1)  # type: ignore
 
         obs = self.get_obs(state)
-        reward = jnp.array([-0.1])+r_leader_close(X)
+
+        reward = 0.1*r_max_interaction(new_B, state.leader)
+
+        done = self.is_terminal(state)
+        # dprint("{x}",x=done)
+        return (obs, state, jnp.array([reward]), done)
+
+
+    def is_terminal(self, state):
 
         # The state.curve(1.0) is the final goal
-        norm_e = la.norm(state.curve.eval(1.0) - X[state.leader])
+        norm_e = la.norm(state.curve.eval(1.0) - state.X[state.leader])
 
-        done = lax.select(norm_e < 5, jnp.array([1.0]), jnp.array([0.0]))
-        # dprint("{x}",x=done)
-        return (obs, state, reward, done)
+        #done = lax.select(norm_e < 5, jnp.array([1.0]), jnp.array([0.0]))
+        done_1 = jnp.array([0.0])
+
+        done_time = state.t>self.params.scenario["episode_size"]
+
+        done = jnp.logical_or(done_1, done_time)
+        return done
+
+    @property
+    def name(self):
+        return "ProberEnv-v0"
 
     def __repr__(self):
-        return f"{__class__.__name__}: {str(self.__dict__)}"
+        return f"{self.name}: {str(self.__dict__)}"

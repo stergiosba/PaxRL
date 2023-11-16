@@ -12,6 +12,7 @@ Agents = []
 Goal = []
 
 
+
 def reset(env, P, L, GG, batch, env_id=0):
     for i in range(env.n_scripted):
         if i == L[0, env_id]:
@@ -20,8 +21,9 @@ def reset(env, P, L, GG, batch, env_id=0):
                 x=P[0, env_id, i, 0],
                 y=P[0, env_id, i, 1],
                 radius=10,
-                neighborhood_radius=120,
+                neighborhood_radius=160,
                 color=(255, 128, 0, 255),
+                #color=(50, 50, 255, 255),
                 batch=batch,
             )
         else:
@@ -30,7 +32,7 @@ def reset(env, P, L, GG, batch, env_id=0):
                 x=P[0, env_id, i, 0],
                 y=P[0, env_id, i, 1],
                 radius=10,
-                neighborhood_radius=30,
+                neighborhood_radius=40,
                 color=(50, 50, 255, 255),
                 batch=batch,
             )
@@ -42,7 +44,7 @@ def reset(env, P, L, GG, batch, env_id=0):
             x=P[0, env_id, i, 0],
             y=P[0, env_id, i, 1],
             radius=10,
-            neighborhood_radius=60,
+            neighborhood_radius=80,
             color=(180, 0, 10, 255),
             batch=batch,
         )
@@ -75,10 +77,13 @@ def reset(env, P, L, GG, batch, env_id=0):
 
 
 def render(env, state, record=False):
+    #print(state.leader.shape)
+    start_time = 100
+    end_time = env.params.scenario["episode_size"]
     # Check for instance of observations array, if jax.array cast it to numpy for fast access.
-    P = state.X
-    V = state.X_dot
-    L = state.leader
+    P = state.X[start_time:]
+    V = state.X_dot[start_time:]
+    L = state.leader[start_time:]
     GG = state.curve
 
     if isinstance(P, chex.Array):
@@ -136,12 +141,22 @@ def render(env, state, record=False):
 
         if symbol == pg.window.key.Q:
             window.on_close()
+            t[0] = 0
+            env_id[0] = 0
+            ScriptedEntities = []
+            Agents = []
+            Goal = []
             pg.app.exit()
 
         if symbol == pg.window.key.R:
             t[0] = 0
+            ScriptedEntities = []
+            Agents = []
+            Goal = []
+            reset(env, P, L, GG, batch, env_id[0])
 
         if symbol == pg.window.key.UP:
+            t[0] = 0
             ScriptedEntities = []
             Agents = []
             Goal = []
@@ -152,6 +167,7 @@ def render(env, state, record=False):
             reset(env, P, L, GG, batch, env_id[0])
 
         if symbol == pg.window.key.DOWN:
+            t[0] = 0
             ScriptedEntities = []
             Agents = []
             Goal = []
@@ -187,7 +203,8 @@ def render(env, state, record=False):
             )
 
         batch.draw()
-        time_label.text = f"{time_prefix} {t[0]+1} [{100*(t[0]+1)/env.params.scenario['episode_size']:0.1f}%]"
+
+        time_label.text = f"{time_prefix} {t[0]+1} [{100*(t[0]+1)/(end_time-start_time):0.1f}%]"
         env_label.text = f"{env_prefix} {env_id[0]+1}/{env.params.settings['n_env']}"
         pg.gl.glClearColor(1, 1, 1, 1)
 
@@ -195,12 +212,12 @@ def render(env, state, record=False):
             pg.image.get_buffer_manager().get_color_buffer().save(
                 f"record/frame_{t[0]}.png"
             )
-        if t[0] == env.params.scenario["episode_size"] - 1:
-            t[0] == env.params.scenario["episode_size"] - 1
+        if t[0] == env.params.scenario["episode_size"] - 1 - start_time:
+            t[0] == env.params.scenario["episode_size"] - 1 - start_time
         else:
             t[0] += 1
 
-        # t[0] %= env.params.scenario["episode_size"]
+        #t[0] %= env.params.scenario["episode_size"]-1
 
     pg.app.run()
 

@@ -3,7 +3,7 @@ import numpy as np
 import numpy.linalg as la
 
 neighbourhood = True
-heading = True
+heading = False
 label = True
 
 class CircleEntity(pg.shapes.Circle):

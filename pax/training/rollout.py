@@ -4,38 +4,18 @@ import jax.numpy as jnp
 import equinox as eqx
 import pax.training as tpax
 from typing import Any, Callable, Tuple
-from jax.debug import print as dprint  # type: ignore
-from pax.core.environment import Environment
-from pax.scenarios.rax import script
-from pax.core.state import EnvState
 from jax.debug import print as dprint
+from pax.core.environment import Environment
+from pax.scenarios.rax import scripted_act
+from pax.core.state import EnvState
 
 
 # should this be eqx
 class RolloutManager(object):
-    def __init__(self, model: eqx.Module, env: Environment):
+    def __init__(self, env: Environment, map_action: Callable):
         # Setup functionalities for vectorized batch rollout
         self.env = env
-        self.observation_space = self.env.observation_space
-        self.action_size = self.env.action_space.size
-        self.model = model
-
-    @eqx.filter_jit
-    def random_action(self, num_envs, key):
-        return self.env.action_space.sample(key, shape=(num_envs, self.env.n_agents))
-
-    @eqx.filter_jit
-    def select_action_ppo(
-        self,
-        obs: chex.ArrayDevice,
-        key: jax.random.PRNGKey,
-    ) -> Tuple[
-        chex.ArrayDevice, chex.ArrayDevice, chex.ArrayDevice, jax.random.PRNGKey
-    ]:
-        value, pi = self.model(obs, key)
-        action = self.env.action_space.categories[pi.sample(seed=key)]
-        log_prob = pi.log_prob(action)
-        return action, log_prob, value[:, 0], key
+        self.map_action = map_action
 
     @eqx.filter_jit
     def batch_reset(self, key_reset: chex.PRNGKey, num_envs: int):
@@ -44,8 +24,8 @@ class RolloutManager(object):
         )
 
     @eqx.filter_jit
-    def batch_step(self, state: EnvState, action):
-        return jax.vmap(self.env.step, in_axes=(0, 0))(state, action)
+    def batch_step(self, key, state: EnvState, action, extra_out):
+        return jax.vmap(self.env.step, in_axes=(None, 0, 0, None))(key, state, action, extra_out)
 
     # Slower than batch_evaluate but maybe useful in the future for other applications
     def batch_evaluate_loopy(self, key_input: chex.PRNGKey, num_envs: int):
@@ -74,28 +54,32 @@ class RolloutManager(object):
         return O, S, action, jnp.mean(cum_re)
 
     @eqx.filter_jit
-    def batch_evaluate(self, key_input: chex.PRNGKey, num_envs: int):
+    def batch_evaluate(self, key_input: chex.PRNGKey, model, num_envs: int):
         """Rollout an episode with lax.scan."""
         # Reset the environments
         key_rst, key_ep = jax.random.split(key_input)
         obs, state = self.batch_reset(key_rst, num_envs)
-
+        
         def policy_step(state_input, _):
             """lax.scan compatible step transition in jax env."""
             obs, state, key, cum_reward, valid_mask = state_input
             key, key_step, key_net = jax.random.split(key, 3)
 
-            action = script(state, self.env.params)
+            action, extra_out = scripted_act(state, self.env.params)
+            #dprint("{x}", x=action)
 
-            # prober_action, log_prob, value, key_net = self.model(
-            #    obs, key_net
-            # )
-            # action = action.at[jnp.arange(num_envs), -1].set(prober_action)
+            #_, pi = model.get_action_and_value(obs)
+            #prober_action = self.map_action(pi.sample(seed=key_net))
+            #action = action.at[:, -1].set(prober_action)
 
+            key_step  = jax.random.split(key_step, num_envs)
             next_o, next_s, reward, done = self.batch_step(
+                key_step,
                 state,
                 action,
+                extra_out
             )
+
             new_cum_reward = cum_reward + reward * valid_mask
             new_valid_mask = valid_mask * (1 - done)
             carry = [
@@ -105,8 +89,10 @@ class RolloutManager(object):
                 new_cum_reward,
                 new_valid_mask,
             ]
-            y = [next_o, next_s, action, new_valid_mask, done, 1, 1]
-            #y = [new_valid_mask]
+            # TODO Log prob and value should be used but that is a future problem.
+            # We only return the action of the prober (last element).
+            y = [next_o, next_s, action[:,-1], new_valid_mask, done, reward]
+            # y = [new_valid_mask]
             return carry, y
 
         # Scan over episode step loop
@@ -122,10 +108,11 @@ class RolloutManager(object):
             (),
             self.env.params.scenario["episode_size"],
         )
-        obs, state, action, _, done, log_prob, value = scan_out
+        obs, state, action, _, done, reward = scan_out
         cum_return = carry_out[-2].squeeze()
-        #return carry_out[0], jnp.mean(cum_return)
-        return obs, state, action, jnp.mean(cum_return), done, log_prob, value
+        # return carry_out[0], jnp.mean(cum_return)
+        #return obs, state, action, jnp.mean(cum_return), done, reward
+        return state, jnp.mean(cum_return)
 
     def __repr__(self):
         return f"{__class__.__name__}: {str(self.__dict__)}"

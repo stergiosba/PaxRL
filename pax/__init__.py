@@ -10,7 +10,7 @@ from pax.core.environment import Environment
 
 __version__ = "0.2.0"
 
-def make(env_name:str = "env_cfg")-> Environment:
+def make(env_name:str = "prob_env")-> Environment:
 
     config = read_config(env_name)        
     return Environment(config)

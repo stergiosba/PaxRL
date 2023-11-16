@@ -13,6 +13,8 @@ def reynolds_dynamics(
     leader: chex.ArrayDevice,
     X: chex.ArrayDevice,
     X_dot: chex.ArrayDevice,
+    B,
+    time,
     params: EnvParams,
 ) -> Tuple[chex.ArrayDevice, chex.ArrayDevice]:
     """`Rax`: Leader modified Reynolds flocking model in Jax.
@@ -72,8 +74,6 @@ def reynolds_dynamics(
         """
         neighbors_tensor = (T_d > 0) & (T_d <= agent_radius**2)
 
-        neighbors_tensor = neighbors_tensor.at[jnp.arange(n_env), leader, :].set(False)
-
         # Calculating all neighbors counts, Summing over the agents axis: 1.
         neighbors_count = jnp.sum(neighbors_tensor, axis=1)
 
@@ -111,13 +111,17 @@ def reynolds_dynamics(
         """
         K = jnp.vstack([[X], [X_dot]])
 
-        neight_inf = T_nbr @ K
+        # Remove the leader from the normal neighborhood of each agent for the cohesion an alignment calculations
+        # The leader has his own influence calculated as leader_inf.
+        neighbors_tensor = T_nbr.at[jnp.arange(n_env), leader, :].set(False)
+
+        neight_inf = neighbors_tensor @ K
         leader_inf = ldr_str * jnp.einsum(
             "ij,kil->kijl", T_ldr, K[:, jnp.arange(n_env), leader, :]
         )
 
         total_inf = neight_inf + leader_inf
-        total_inf = total_inf.at[..., -1, :].set(jnp.array(0))
+        # total_inf = total_inf.at[..., -1, :].set(jnp.array(0))
         return total_inf
 
     def mixed_steer(
@@ -154,8 +158,8 @@ def reynolds_dynamics(
         alig = max_force * (alig / la.norm(alig + eps, axis=-1)[..., None])
 
         # Leader whitening (i.e. cohesion and alignment of the leader are set to 0.)
-        # coh = coh.at[jnp.arange(n_env), leader, :].set(jnp.array([0, 0]))
-        # alig = alig.at[jnp.arange(n_env), leader, :].set(jnp.array([0, 0]))
+        coh = coh.at[jnp.arange(n_env), leader, :].set(jnp.array([0, 0]))
+        alig = alig.at[jnp.arange(n_env), leader, :].set(jnp.array([0, 0]))
 
         return coh, alig
 
@@ -255,7 +259,6 @@ def reynolds_dynamics(
 
     # Cohesion and  Alignment steer calculation.
     cohesion, alignment = mixed_steer()
-
     # Separation steer calculation.
     separation = separation_steer()
 
@@ -264,46 +267,56 @@ def reynolds_dynamics(
 
     # Performs neighbors masking.
     total_mask = total_neighbors > 0
-    # neighbors_mask = C_nbr > 0
     prober_mask = T_prb > 0
+    B += prober_mask[:,:-1]
 
-    steer = jnp.einsum("ijm,ij->ijm", (w_c * cohesion + w_a * alignment), total_mask)
-
-    steer += jnp.einsum("ijm,ij->ijm", (w_s * separation), total_mask)
+    steer = jnp.einsum(
+        "ijm,ij->ijm", (w_c * cohesion + w_a * alignment + w_s * separation), total_mask
+    )
+    # dprint("{x}",x=la.norm(interaction[0], axis=1))
 
     # This sets the influences on the prober to 0.
     steer = steer.at[..., -1, :].set(jnp.array([0, 0]))
 
     steer += jnp.einsum("ijm,ij->ijm", interaction, prober_mask)
-    return steer
+    return steer, (B)
 
 
 @partial(jit, static_argnums=(0))
 def rk4_integration(dynamics_fun: Callable, state, params):
     dt = params.settings["dt"]
 
-    S1 = dynamics_fun(state.leader, state.X, state.X_dot, params)
-    S2 = dynamics_fun(
+    S1, extra_out = dynamics_fun(state.leader, state.X, state.X_dot, state.B, state.t[0], params)
+    S2, extra_out = dynamics_fun(
         state.leader,
         state.X + 0.5 * dt * state.X_dot,
         state.X_dot + dt / 2 * S1,
+        state.B,
+        state.t[0],
         params,
     )
-    S3 = dynamics_fun(
+    S3, extra_out = dynamics_fun(
         state.leader,
         state.X + 0.5 * dt * state.X_dot,
         state.X_dot + 0.5 * dt * S2,
+        state.B,
+        state.t[0],
         params,
     )
-    S4 = dynamics_fun(
-        state.leader, state.X + dt * state.X_dot, state.X_dot + dt * S3, params
+    S4, extra_out = dynamics_fun(
+        state.leader,
+        state.X + dt * state.X_dot,
+        state.X_dot + dt * S3,
+        state.B,
+        state.t[0],
+        params,
     )
 
-    return S1 + 2 * (S2 + S3) + S4
+    return S1 + 2 * (S2 + S3) + S4, extra_out
 
 
 @jit
-def script(state: EnvState, params: EnvParams, *args) -> Tuple[chex.ArrayDevice, int]:
+def scripted_act(state: EnvState, params: EnvParams, *args) -> Tuple[chex.ArrayDevice, int]:
     """Calculates the scripted action for the swarm members.
 
     `Args`:
@@ -357,18 +370,20 @@ def script(state: EnvState, params: EnvParams, *args) -> Tuple[chex.ArrayDevice,
     X = state.X
     leader = state.leader
     time = state.t[0]
+    #dprint("{x}", x=X.shape)
     n_env, _, _ = X.shape
+    
     # TODO: Actually fix this so that the leader goes to the points that it should but no faste pace.
     ff = 0.66 * (params.scenario["episode_size"] - 1)
 
-    steer = rk4_integration(reynolds_dynamics, state, params)
+    steer, extra_out = rk4_integration(reynolds_dynamics, state, params)
     # dprint("{x}", x=steer)
     e_leader = state.curve.eval(time / ff) - X[jnp.arange(n_env), leader]
     u_leader = params.scenario["Kp_l"] * e_leader
     steer = steer.at[jnp.arange(n_env), leader].add(u_leader)
-    # dprint("{x}",x=closest_agent(X))
-    e_prob = specific_member(2) - X[jnp.arange(n_env), -1]
+
+    e_prob = swarm_center() - X[jnp.arange(n_env), -1]
     u_prob = params.scenario["Kp_p"] * e_prob
     steer = steer.at[jnp.arange(n_env), -1].add(u_prob)
 
-    return steer
+    return steer, extra_out

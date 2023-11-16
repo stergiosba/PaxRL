@@ -15,10 +15,13 @@ class EnvState(eqx.Module):
     """
 
     X: chex.ArrayDevice
+    X_prev: chex.ArrayDevice
     X_dot: chex.ArrayDevice
+    X_dot_prev: chex.ArrayDevice
+    B: chex.ArrayDevice
     leader: chex.ArrayDevice
     curve: BezierCurve3
-    t: chex.Scalar
+    t: int
 
     def __repr__(self):
         return f"{__class__.__name__}: {str(self.__dict__)}"

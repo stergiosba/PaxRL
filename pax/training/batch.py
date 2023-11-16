@@ -5,9 +5,10 @@ import jax
 import jax.numpy as jnp
 from typing import Any, Callable, Tuple, Dict
 import numpy as np
+from jax.debug import print as dprint
+from collections import namedtuple
 
-
-# should this be eqx.Module
+# should this be eqx.Module?
 class BatchManager(object):
     def __init__(
         self,
@@ -15,7 +16,7 @@ class BatchManager(object):
         action_size,
         state_shape,
     ):
-        self.num_envs = train_config["num_envs"]
+        self.num_envs = train_config["num_train_envs"]
         self.n_steps = train_config["n_steps"]
         self.discount = train_config["discount"]
         self.gae_lambda = train_config["gae_lambda"]
@@ -33,7 +34,7 @@ class BatchManager(object):
                 dtype=jnp.float32,
             ),
             "actions": jnp.empty(
-                (self.n_steps, self.num_envs, self.action_size),
+                (self.n_steps, self.num_envs),
             ),
             "rewards": jnp.empty((self.n_steps, self.num_envs), dtype=jnp.float32),
             "dones": jnp.empty((self.n_steps, self.num_envs), dtype=jnp.uint8),
@@ -45,14 +46,14 @@ class BatchManager(object):
     @eqx.filter_jit
     def append(self, buffer, state, action, reward, done, log_pi, value):
         return {
-            "states": buffer["states"].at[buffer["_step"]].set(state),
-            "actions": buffer["actions"].at[buffer["_step"]].set(action),
-            "rewards": buffer["rewards"].at[buffer["_step"]].set(reward.squeeze()),
-            "dones": buffer["dones"].at[buffer["_step"]].set(done.squeeze()),
-            "log_pis_old": buffer["log_pis_old"].at[buffer["_step"]].set(log_pi),
-            "values_old": buffer["values_old"].at[buffer["_step"]].set(value),
-            "_step": (buffer["_step"] + 1) % self.n_steps,
-        }
+                "states":  buffer["states"].at[buffer["_step"]].set(state),
+                "actions": buffer["actions"].at[buffer["_step"]].set(action),
+                "rewards": buffer["rewards"].at[buffer["_step"]].set(reward.squeeze()),
+                "dones": buffer["dones"].at[buffer["_step"]].set(done.squeeze()),
+                "log_pis_old": buffer["log_pis_old"].at[buffer["_step"]].set(log_pi),
+                "values_old": buffer["values_old"].at[buffer["_step"]].set(value),
+                "_step": (buffer["_step"] + 1) % self.n_steps,
+            }
 
     @eqx.filter_jit
     def get(self, buffer):

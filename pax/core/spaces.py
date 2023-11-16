@@ -79,10 +79,9 @@ class MultiDiscrete(Space):
     """
 
     categories: chex.ArrayDevice
-    mapping: chex.Scalar
     dtype: Union[jnp.float32, jnp.int32]
 
-    def __init__(self, act_range: Sequence, dtype=jnp.float32, mapping=0):
+    def __init__(self, act_range: Sequence, dtype=jnp.float32):
         """
 
         `Args`:
@@ -95,7 +94,6 @@ class MultiDiscrete(Space):
         X, Y = jnp.mgrid[low : high + 0.1 : step, low : high + 0.1 : step]
         self.categories = jnp.vstack((X.flatten(), Y.flatten())).T
         self.dtype = dtype
-        self.mapping = mapping
 
     @eqx.filter_jit
     def sample(self, key: chex.PRNGKey) -> chex.Array:
@@ -108,6 +106,9 @@ class MultiDiscrete(Space):
         # shape_cond = (x.shape == self.shape)
         range_cond = jnp.logical_and(x >= 0, x < self.n)
         return range_cond
+    
+    def map_action(self, action_number):
+        return self.categories[action_number]
 
     @property
     def shape(self) -> Tuple:
