@@ -8,3 +8,5 @@ venv*
 comparison
 leader
 follower
+poetry.lock
+pyproject.toml
