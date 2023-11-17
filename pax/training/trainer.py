@@ -1,0 +1,312 @@
+from typing import Any
+import jax.random as jrandom
+import jax.numpy as jnp
+import time
+import equinox as eqx
+import chex
+import optax
+import numpy as np
+from collections import defaultdict
+from pax.training.rollout import RolloutManager
+from pax.training.batch import BatchManager
+from pax.utils.read_toml import read_config
+from pax.scenarios.rax import scripted_act
+from jax import jit, vmap
+from tqdm import tqdm
+from typing import Callable, Tuple
+from jax.debug import print as dprint
+from pax.render.render import render, matplotlib_render
+
+
+class Trainer:
+    def __init__(self, env):
+        self.env = env
+        self.map_action = vmap(env.action_space.map_action, in_axes=0)
+
+    def __call__(self, model, key, train_config_file="train_cfg"):
+        # @eqx.filter_jit
+        def get_transition(
+            model: eqx.Module,
+            obs: chex.ArrayDevice,
+            state: dict,
+            batch,
+            rng: jrandom.PRNGKey,
+        ):
+            value, pi = model.get_action_and_value(obs)
+            # action_agent = self.map_action(pi.sample(seed=rng))
+            action_agent_unmapped = pi.sample(seed=rng)
+            log_pi = pi.log_prob(action_agent_unmapped)
+            action_agent = self.map_action(action_agent_unmapped)
+
+            action_all, extra_in = scripted_act(state, self.env.params)
+
+            # action = action.at[-1].set(action_agent)
+            # dprint("{x}", x=action_agent)
+
+            new_key, key_step = jrandom.split(rng)
+            print(new_key)
+            b_rng = jrandom.split(key_step, ppo_config["num_train_envs"])
+            # Automatic env resetting in gymnax step!
+            next_obs, next_state, reward, done = rollout_manager.batch_step(
+                b_rng, state, action_all, extra_in
+            )
+
+            batch = batch_manager.append(
+                batch, obs, action_agent_unmapped, reward, done, log_pi, value.flatten()
+            )
+            return model, next_obs, next_state, batch, new_key
+
+        train_cfg = read_config(train_config_file)
+        ppo_config = train_cfg["ppo_params"]
+
+        num_total_epochs = int(
+            ppo_config["num_train_steps"] // ppo_config["num_train_envs"] + 1
+        )
+
+        num_steps_warm_up = int(ppo_config["num_train_steps"] * ppo_config["lr_warmup"])
+        schedule_fn = optax.linear_schedule(
+            init_value=-float(ppo_config["lr_begin"]),
+            end_value=-float(ppo_config["lr_end"]),
+            transition_steps=num_steps_warm_up,
+        )
+
+        optimizer = optax.chain(
+            optax.clip_by_global_norm(ppo_config["max_grad_norm"]),
+            optax.scale_by_adam(eps=1e-5),
+            optax.scale_by_schedule(schedule_fn),
+        )
+
+        opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
+
+        # I don't like the map_action function, but it's necessary for now.
+        rollout_manager = RolloutManager(self.env, self.map_action)
+        batch_manager = BatchManager(
+            train_config=train_cfg["ppo_params"],
+            action_size=self.env.action_space.size,
+            state_shape=self.env.observation_space.size,
+        )
+        # Reset the batch buffer
+        batch = batch_manager.reset()
+
+        # Split the key as necessary
+        rng, rng_step, rng_reset, rng_eval, rng_update = jrandom.split(key, 5)
+
+        # Run the initialization step of the environments at this point
+        # the observation has shape (n_env, n_agents, 2)
+        obs, state = rollout_manager.batch_reset(
+            rng_reset, self.env.params.settings["n_env"]
+        )
+
+        total_steps = 0
+        log_steps, log_return = [], []
+        T = tqdm(
+            range(num_total_epochs),
+            colour="#FFA500",
+            desc="PPO",
+            leave=True,
+        )
+        best_reward = 0
+        for step in T:
+            # Get a transition
+            model, obs, state, batch, rng_step = get_transition(
+                model, obs, state, batch, rng_step
+            )
+            # Increment the step counter
+            total_steps += self.env.params.settings["n_env"]
+
+            if step % (ppo_config["n_steps"] + 1) == 0:
+                metric_dict, model, rng_update = update(
+                    model,
+                    optimizer,
+                    opt_state,
+                    batch_manager.get(batch),
+                    ppo_config["num_train_envs"],
+                    ppo_config["n_steps"],
+                    ppo_config["n_minibatch"],
+                    ppo_config["epoch_ppo"],
+                    ppo_config["clip_eps"],
+                    ppo_config["entropy_coeff"],
+                    ppo_config["critic_coeff"],
+                    rng_update,
+                )
+                batch = batch_manager.reset()
+
+            if (step + 1) % ppo_config["evaluate_every_epochs"] == 0:
+                rng, rng_eval = jrandom.split(rng)
+                show_state, rewards = rollout_manager.batch_evaluate(
+                    rng_eval,
+                    model,
+                    ppo_config["num_test_rollouts"],
+                )
+                log_steps.append(total_steps)
+                log_return.append(rewards)
+                T.set_description(f"Rewards: {rewards}")
+                T.refresh()
+
+                if rewards > best_reward:
+                    best_reward = rewards
+                    print(best_reward)
+                    #matplotlib_render(self.env, show_state)
+                    #render(self.env, show_state, record=self.env.params.settings["record"])
+
+                # if mle_log is not None:
+                #     mle_log.update(
+                #         {"num_steps": total_steps},
+                #         {"return": rewards},
+                #         model=jnp.array([-1]),
+                #         save=True,
+                #     )
+        return num_total_epochs, log_steps, log_return
+
+@jit
+def flatten_dims(x):
+    return x.swapaxes(0, 1).reshape(x.shape[0] * x.shape[1], *x.shape[2:])
+
+
+@eqx.filter_jit
+def loss_actor_and_critic(
+    model: eqx.Module,
+    obs: jnp.ndarray,
+    target: jnp.ndarray,
+    value_old: jnp.ndarray,
+    log_pi_old: jnp.ndarray,
+    gae: jnp.ndarray,
+    action: jnp.ndarray,
+    clip_eps: float,
+    critic_coeff: float,
+    entropy_coeff: float,
+) -> jnp.ndarray:
+    value_pred, pi = model.get_action_and_value(obs)
+    # value_pred, pi = apply_fn(params_model, obs, rng=None)
+    value_pred = value_pred[:, 0]
+
+    # TODO: Figure out why training without 0 breaks categorical model
+    # And why with 0 breaks gaussian model pi
+    log_prob = pi.log_prob(action[..., -1])
+
+    value_pred_clipped = value_old + (value_pred - value_old).clip(-clip_eps, clip_eps)
+    value_losses = jnp.square(value_pred - target)
+    value_losses_clipped = jnp.square(value_pred_clipped - target)
+    value_loss = 0.5 * jnp.maximum(value_losses, value_losses_clipped).mean()
+
+    ratio = jnp.exp(log_prob - log_pi_old)
+    gae_mean = gae.mean()
+    gae = (gae - gae_mean) / (gae.std() + 1e-8)
+    loss_actor1 = ratio * gae
+    loss_actor2 = jnp.clip(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * gae
+    loss_actor = -jnp.minimum(loss_actor1, loss_actor2)
+    loss_actor = loss_actor.mean()
+
+    entropy = pi.entropy().mean()
+
+    total_loss = loss_actor + critic_coeff * value_loss - entropy_coeff * entropy
+
+    return total_loss, (
+        value_loss,
+        loss_actor,
+        entropy,
+        value_pred.mean(),
+        target.mean(),
+        gae_mean,
+    )
+
+def update(
+    model: eqx.Module,
+    optimizer,
+    opt_state,
+    batch: Tuple,
+    num_envs: int,
+    n_steps: int,
+    n_minibatch: int,
+    epoch_ppo: int,
+    clip_eps: float,
+    entropy_coeff: float,
+    critic_coeff: float,
+    rng: jrandom.PRNGKey,
+):
+    """Perform multiple epochs of updates with multiple updates."""
+    obs, action, log_pi_old, value, target, gae = batch
+    size_batch = num_envs * n_steps
+    size_minibatch = size_batch // n_minibatch
+    idxes = jnp.arange(num_envs * n_steps)
+    avg_metrics_dict = defaultdict(int)
+
+    for _ in range(epoch_ppo):
+        idxes = jrandom.permutation(rng, idxes)
+        idxes_list = [
+            idxes[start : start + size_minibatch]
+            for start in jnp.arange(0, size_batch, size_minibatch)
+        ]
+        model, total_loss = update_epoch(
+            model,
+            optimizer,
+            opt_state,
+            idxes_list,
+            flatten_dims(obs),
+            flatten_dims(action),
+            flatten_dims(log_pi_old),
+            flatten_dims(value),
+            jnp.array(flatten_dims(target)),
+            jnp.array(flatten_dims(gae)),
+            clip_eps,
+            entropy_coeff,
+            critic_coeff,
+        )
+
+        total_loss, (
+            value_loss,
+            loss_actor,
+            entropy,
+            value_pred,
+            target_val,
+            gae_val,
+        ) = total_loss
+
+        avg_metrics_dict["total_loss"] += np.asarray(total_loss)
+        avg_metrics_dict["value_loss"] += np.asarray(value_loss)
+        avg_metrics_dict["actor_loss"] += np.asarray(loss_actor)
+        avg_metrics_dict["entropy"] += np.asarray(entropy)
+        avg_metrics_dict["value_pred"] += np.asarray(value_pred)
+        avg_metrics_dict["target"] += np.asarray(target_val)
+        avg_metrics_dict["gae"] += np.asarray(gae_val)
+
+    for k, v in avg_metrics_dict.items():
+        avg_metrics_dict[k] = v / (epoch_ppo)
+
+    return avg_metrics_dict, model, rng
+
+
+@eqx.filter_jit
+def update_epoch(
+    model: eqx.Module,
+    optimizer,
+    opt_state,
+    idxes: jnp.ndarray,
+    obs,
+    action,
+    log_pi_old,
+    value,
+    target,
+    gae,
+    clip_eps: float,
+    entropy_coeff: float,
+    critic_coeff: float,
+):
+    for idx in idxes:
+        grad_fn = eqx.filter_value_and_grad(loss_actor_and_critic, has_aux=True)
+        total_loss, grads = grad_fn(
+            model,
+            obs=obs[idx],
+            target=target[idx],
+            value_old=value[idx],
+            log_pi_old=log_pi_old[idx],
+            gae=gae[idx],
+            # action=action[idx].reshape(-1, 1),
+            action=jnp.expand_dims(action[idx], -1),
+            clip_eps=clip_eps,
+            critic_coeff=critic_coeff,
+            entropy_coeff=entropy_coeff,
+        )
+        updates, opt_state = optimizer.update(grads, opt_state, model)
+        model = eqx.apply_updates(model, updates)
+    return model, total_loss

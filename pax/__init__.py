@@ -1,7 +1,17 @@
-from pax.core.environment import Environment
 import tomli
+import pax.core.state as state
+import pax.core.action as action
+import pax.core.actors as actors
+import pax.core.spaces as spaces
+from pax.utils.read_toml import read_config
+from typing import Dict, Tuple
+from pax.core.environment import Environment
 
-def make(env_name)-> Environment:
-    with open(env_name+".toml",mode="rb") as tomlfile:
-        env_params = tomli.load(tomlfile)
-    return Environment(env_params)
+
+__version__ = "0.2.0"
+
+def make(env_name:str = "prob_env")-> Environment:
+
+    config = read_config(env_name)        
+    return Environment(config)
+

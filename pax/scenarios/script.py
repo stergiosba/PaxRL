@@ -1,13 +1,12 @@
 import chex
 import jax.numpy as jnp
 import equinox as eqx
-from jax.debug import print as dprint
 import jax.numpy.linalg as la
 import numpy as np
 from typing import Tuple
+from jax.debug import print as dprint
 from jax import jit, lax
-from pax.core.state import EntityState, AgentState, EnvState
-
+from pax.core.state import EnvState
 
 @jit
 def distance_matrix_jax(X:chex.Array) -> chex.Array:
@@ -20,8 +19,7 @@ def distance_matrix_jax(X:chex.Array) -> chex.Array:
         `Distance_matrix (chex.Array)`: Distance matrix of shape:(n,n)
     """  
     
-    return jnp.sum((X[:, None, :] - X[None, :, :]) ** 2, axis=-1)
-
+    return jnp.einsum('ijk->ij',(X[:, None] - X[None, :]) **2)
 
 @jit
 def leader_neighbors(
@@ -49,7 +47,7 @@ def neighbors(
         - `agent_radius (float)`: Influence radius for the simple agents.
 
     Returns:
-        - `neighbors_matrix (chex.Array)`: Boolean array of neighbors.
+        - `neighbors_matrix (chex.Array)`: Array of neighbors for every agent.
         - `neighbors_count (chex.Array)`: Row-wise sum of neighbors_matrix, i.e. cardinality of each neighborhood. 
     """
     
@@ -59,41 +57,46 @@ def neighbors(
     return neighbors_matrix, neighbors_count
 
 @jit
-def neighbors_influence(
-    A: chex.Array,
-    neighbors_matrix: chex.Array) -> chex.Array:
-    """Calculates the influence of simple agents.
+def total_influence(
+    X,
+    X_dot,
+    neighbors_matrix,
+    leader_neighbors_count,
+    leader,
+    leader_str):
+    """Calculates the influence of simple agents and then of the leader agent.
 
     Args:
-        A (chex.Array): Swarm agents position or velocity matrix of shape: (n,2).
-        neighbors_matrix (chex.Array): _description_
-        max_speed (float): _description_
+        - `X (chex.Array)`: Swarm agents position matrix of shape: (n,2).
+        - `X_dot (chex.Array)`: Swarm agents velocity matrix of shape: (n,2).
+        - `neighbors_matrix (chex.Array)`: Array of neighbors for every agent.
+        - `leader_neighbors_count (chex.Array): _description_
+        - `leader (chex.Array): _description_
 
     Returns:
         - `chex.Array`: _description_
     """
-        
-    return jnp.sum(neighbors_matrix[:,:,None]*A, axis=-2)
+    K = jnp.vstack([[X],[X_dot]])
 
-    
+    neight_inf = neighbors_matrix@K
+    leader_inf = leader_str*leader_neighbors_count[:,None]*(K[:,leader][:,None])
+
+    return neight_inf+leader_inf
+
 @jit
-def cohesion_steer(
+def mixed_steer(
         X: chex.Array,
         X_dot: chex.Array,
-        leader_id: int,
-        leader_str: float, 
-        neighbors_matrix: chex.Array,
-        leader_neighbors_count: chex.Array,
-        total_count: chex.Array) -> chex.Array:
-    """ Cohesion calculations of `Rax`: Leader modified Reynolds flocking model in Jax.
+        leader:int,
+        total_inf: chex.Array,
+        total_count: chex.Array) -> Tuple[chex.Array, chex.Array]:
+    """ Cohesion and alignment calculations of `Rax`: Leader modified Reynolds flocking model in Jax.
         Calculates the cohesion steering based on local interactions with simple agents and with the leader using Reynold's Dynamics
     
     Args:
         - `X (chex.Array)`: Swarm agents position matrix of shape: (n,2).
-        - `leader_id (int)`: The id of the leader.
-        - `leader_str (float)`: The strength of the leader agent.
-        - `neighbors_matrix (chex.Array)`: Boolean array of neighbors.
-        - `leader_neighbors_count (chex.Array)`: _description_
+        - `X_dot (chex.Array)`: Swarm agents velocity matrix of shape: (n,2).
+        - `total_inf (chex.Array)`: The total influence calculated for each agent
         - `total_count (chex.Array)`: The total number of neighbors for each agent.
 
     Returns:
@@ -101,70 +104,24 @@ def cohesion_steer(
     """
     
     # Small epsilon to avoid division by zero
-    eps = 10**-16
-    
-    # Influence from simple neighbors
-    neighbors_inf = neighbors_influence(X, neighbors_matrix)
-    
-    # Leader influence
-    leader_inf = leader_str*leader_neighbors_count[:,None]*X[leader_id]
-    #debug.print("lead_inf={x}",x=leader_inf)
+    eps = 10**-7
+   
     # Cohesion steer calculation
-    cohesion = (neighbors_inf+leader_inf)/(total_count[:,None]+eps)-X
+    cohesion = (total_inf[0])/(total_count[:,None]+eps)-X
+
+    alignment = (total_inf[1])/(total_count[:,None]+eps)
     
-    max_speed = 2
+    max_speed = 20
     cohesion = max_speed*(cohesion/la.norm(cohesion+eps, axis=1)[:,None]) - X_dot
-
-    # Leader whitening (i.e. the leader is not affected by anyone.)
-    #cohesion = cohesion.at[leader_id].set(jnp.array([0,0]))
-    
-    max_force = 20
-    return max_force*(cohesion/la.norm(cohesion+eps, axis=1)[:,None])
-
-
-@jit
-def alignment_steer(
-        X_dot: chex.Array, 
-        leader_id: int,
-        leader_factor: float, 
-        neighbors_matrix: chex.Array,
-        leader_neighbors_count: chex.Array,
-        total_count: chex.Array) -> chex.Array:
-    """Alignment calculations of `Rax`: Leader modified Reynolds flocking model in Jax.
-
-    Args:
-        - `X_dot (chex.Array)`: _description_
-        - `leader_id (int)`: _description_
-        - `leader_factor (float)`: _description_
-        - `neighbors_matrix (chex.Array)`: _description_
-        - `leader_neighbors_count (chex.Array)`: _description_
-        - `total_count (chex.Array)`: _description_
-
-    Returns:
-        - `chex.Array`: _description_
-    """
-    
-    # Small epsilon to avoid division by zero
-    eps = 10**-16
-    
-    # Influence from simple neighbors
-    neighbors_inf = neighbors_influence(X_dot, neighbors_matrix)
-    
-    # Leader influence
-    leader_inf = leader_factor*leader_neighbors_count[:,None]*X_dot[leader_id]
-    # Alignment steer calculation
-    
-    alignment = (neighbors_inf+leader_inf)/(total_count[:,None]+eps)
-    
-    max_speed = 2
     alignment = max_speed*(alignment/la.norm(alignment+eps, axis=1)[:,None]) - X_dot
 
     # Leader whitening (i.e. the leader is not affected by anyone.)
-    #alignment = alignment.at[leader_id].set(jnp.array([0,0]))
+    cohesion = cohesion.at[leader].set(jnp.array([0,0]))
+    alignment = alignment.at[leader].set(jnp.array([0,0]))
     
-    max_force = 20
-    return max_force*(alignment/la.norm(alignment+eps, axis=1)[:,None])
-
+    max_force = 40
+    return (max_force*(cohesion/la.norm(cohesion+eps, axis=1)[:,None]),
+            max_force*(alignment/la.norm(alignment+eps, axis=1)[:,None]))
 
 @jit
 def separation_steer(
@@ -185,7 +142,7 @@ def separation_steer(
     """
     
     # Small epsilon to avoid division by zero
-    eps = 10**-16
+    eps = 10**-7
     n = len(X)
     
     # The main diagonal of a distance matrix is 0 since d(1,1) is the distance of agent 1 from itself
@@ -196,13 +153,12 @@ def separation_steer(
     scaled_neighbors_matrix = neighbors_matrix/adj_dist_mat
     
     # Separation steer calculation
-    max_speed = 2
-    separation = jnp.sum(scaled_neighbors_matrix,axis=1)[:,None]*X - scaled_neighbors_matrix@X
+    max_speed = 20
+    separation = jnp.einsum('ij,jk->jk',scaled_neighbors_matrix,X) - scaled_neighbors_matrix@X
     separation = max_speed*(separation/(la.norm(separation+eps, axis=1)[:,None])) - X_dot
     
-    max_force = 20
+    max_force = 40
     return max_force*(separation/(la.norm(separation+eps, axis=1)[:,None]))
-
 
 @jit
 def reynolds_jax(leader: int, X: chex.Array, X_dot: chex.Array) -> Tuple[chex.Array, int]:
@@ -240,27 +196,27 @@ def reynolds_jax(leader: int, X: chex.Array, X_dot: chex.Array) -> Tuple[chex.Ar
     # Calculate the total number of neighbors for each agent.
     total_count = neighbors_count+leader_str*leader_neighbors_count
 
-    # Cohesion steer calculation.
-    cohesion = cohesion_steer(X, X_dot, leader, leader_str, neighbors_matrix, leader_neighbors_count, total_count)
-    
-    # Alignment steer calculation.
-    alignment = alignment_steer(X_dot, leader, leader_str, neighbors_matrix, leader_neighbors_count, total_count)
-    
+    # Influence from simple neighbors and leader
+    total_inf = total_influence(X, X_dot, neighbors_matrix, leader_neighbors_count, leader, leader_str)
+
+    # Cohesion and  Alignment steer calculation.
+    cohesion, alignment = mixed_steer(X, X_dot, leader, total_inf, total_count)
+
     # Separation steer calculation.
     separation =  separation_steer(X, X_dot, distance_matrix, neighbors_matrix)
     
     # Performs neighbors masking.
     total_mask = (total_count>0)[:,None]
     neighbors_mask = (neighbors_count>0)[:,None]
-    w_c = 0.4
+    w_c = 0.2
     w_a = 1
-    w_s = 2
+    w_s = 1.2
 
     return (total_mask*(w_c*cohesion+ w_a*alignment) + neighbors_mask*w_s*separation), leader
 
 
 @eqx.filter_jit
-def script(state: EnvState, n_scripted: int) -> chex.Array:
+def script(state: EnvState, n_scripted: int) -> Tuple[chex.Array, int]:
     """Calculates the scripted action for the swarm agents.
 
     `Args`:
@@ -273,4 +229,11 @@ def script(state: EnvState, n_scripted: int) -> chex.Array:
     
     X_scripted = state.X[:n_scripted]
     X_dot_scripted = state.X_dot[:n_scripted]
-    return reynolds_jax(state.leader, X_scripted, X_dot_scripted)
+
+    S, leader = reynolds_jax(state.leader, X_scripted, X_dot_scripted)
+    e = state.goal-X_scripted[leader]
+    Kp = 2
+    u = Kp*e
+    S = S.at[state.leader].set(S[state.leader]+u)
+
+    return S, leader
