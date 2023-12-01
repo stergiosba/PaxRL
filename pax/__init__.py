@@ -1,17 +1,18 @@
-import tomli
 import pax.core.state as state
 import pax.core.action as action
-import pax.core.actors as actors
 import pax.core.spaces as spaces
+import pax.core.environment as environment
+import pax.training as training
+import pax.render.render as render
 from pax.utils.read_toml import read_config
 from typing import Dict, Tuple
-from pax.core.environment import Environment
+from pax.scenarios.prober import Proberenv
 
 
 __version__ = "0.2.0"
 
-def make(env_name:str = "prob_env")-> Environment:
 
-    config = read_config(env_name)        
-    return Environment(config)
+def make(env_name: str = "prob_env") -> Proberenv:
 
+    config = read_config(env_name)
+    return Proberenv(config)

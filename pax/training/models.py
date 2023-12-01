@@ -5,14 +5,14 @@ import jax.numpy.linalg as la
 import equinox as eqx
 import chex
 from jax import jit
-from pax.core.environment import Environment
-from pax import make
-from typing import List
-from tensorflow_probability.substrates import jax as tfp
+from pax.core.environment import Environment, EnvParams
+from typing import List, Tuple
+from jax.debug import print as dprint
 
-    
-@jit
-def orthogonal_init(array, gain, key):
+
+def orthogonal_init(
+    array: chex.ArrayDevice, gain: float, key: chex.PRNGKey
+) -> chex.ArrayDevice:
     r"""Fills the input `array` with a (semi) orthogonal matrix, as
     described in `Exact solutions to the nonlinear dynamics of learning in deep
     linear neural networks` - Saxe, A. et al. (2013). The input tensor must have
@@ -46,69 +46,78 @@ def orthogonal_init(array, gain, key):
 
 
 class QRLinear(eqx.nn.Linear):
-    def __init__(self, input_dim, output_dim, gain, key):
+    """
+    Linear layer with orthogonal initialization of weights.
+    """
+
+    def __init__(self, input_dim: int, output_dim: int, gain: float, key: chex.PRNGKey):
         super().__init__(input_dim, output_dim, key=key)
         self.weight = orthogonal_init(self.weight, gain, key)
-        self.bias = jnp.zeros_like(self.bias)
+        self.bias = 0.05 * jnp.ones_like(self.bias)
+
+    # def __call__(self, x, *, key=None):
+    #     # return super().__call__(x, key=key)
+    #     return self.weight @ x + self.bias
+
 
 class Agent(eqx.Module):
-    critic: List
-    actor: List
+    """The agent class. This class contains the critic and actor networks."""
 
-    def __init__(self, env: Environment, key):
+    critic: eqx.Module
+    actor: eqx.Module
+
+    def __init__(self, env: Environment, key: chex.PRNGKey):
+        # TODO: Refactor this agent to be more general.
+
         obs_shape = env.observation_space.shape
         keys = jrandom.split(key, 6)
-        self.critic = [
-            eqx.filter_vmap(
+
+        self.critic = eqx.nn.Sequential(
+            [
                 QRLinear(
                     jnp.array(obs_shape).prod(),
                     64,
                     jnp.sqrt(2.0),
                     key=keys[0],
                 ),
-                in_axes=0,
-            ),
-            jnn.tanh,
-            eqx.filter_vmap(QRLinear(64, 64, jnp.sqrt(2.0), key=keys[1]), in_axes=0),
-            jnn.tanh,
-            eqx.filter_vmap(QRLinear(64, 1, jnp.array([1.0]), key=keys[2]), in_axes=0),
-        ]
+                eqx.nn.Lambda(jnn.relu),
+                QRLinear(64, 64, jnp.sqrt(2.0), key=keys[1]),
+                eqx.nn.Lambda(jnn.relu),
+                QRLinear(64, 1, jnp.array([1.0]), key=keys[2]),
+            ]
+        )
 
-        self.actor = [
-            eqx.filter_vmap(
+        self.actor = eqx.nn.Sequential(
+            [
                 QRLinear(
                     jnp.array(obs_shape).prod(),
                     64,
                     jnp.sqrt(2),
                     key=keys[3],
                 ),
-                in_axes=0,
-            ),
-            jnn.tanh,
-            eqx.filter_vmap(QRLinear(64, 64, jnp.sqrt(2.0), key=keys[4]), in_axes=0),
-            jnn.tanh,
-            eqx.filter_vmap(
-                QRLinear(
-                    64, env.action_space.size, jnp.array([0.1]), key=keys[5]
-                ),
-                in_axes=0,
-            ),
-        ]
+                eqx.nn.Lambda(jnn.relu),
+                QRLinear(64, 64, jnp.sqrt(2.0), key=keys[4]),
+                eqx.nn.Lambda(jnn.relu),
+                QRLinear(64, env.action_space.n_axes, jnp.array([0.01]), key=keys[5]),
+            ]
+        )
 
     @eqx.filter_jit
-    def get_value(self, x):
-        x_v = x
-        for layer in self.critic:
-            x_v = layer(x_v)
-        return x_v
+    def __call__(
+        self, x: chex.ArrayDevice
+    ) -> Tuple[chex.ArrayDevice, chex.ArrayDevice]:
+        """Forward pass of the agent. Returns the value and logits.
 
-    
-    #@eqx.filter_jit
-    def get_action_and_value(self, x):
-        x_a = x
-        for layer in self.actor:
-            x_a = layer(x_a)
-            
-        pi = tfp.distributions.Categorical(logits=x_a)
+        Args:
+            x (chex.ArrayDevice): The input to the agent. Should be of the shape (batch_size, obs_shape)
 
-        return self.get_value(x), pi
+        Returns:
+            _type_: _description_
+        """
+        value = self.critic(x)
+        logits = self.actor(x)
+
+        split_logits = jnp.split(logits, [11,11])
+        split_logits = [split_logits[0], split_logits[2]]
+
+        return value, split_logits            

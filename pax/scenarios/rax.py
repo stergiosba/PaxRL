@@ -72,7 +72,7 @@ def reynolds_dynamics(
             - `neighbors_tensor (chex.ArrayDevice)`: Tensor of neighbors for every agent and every environment.
             - `neighbors_count (chex.ArrayDevice)`: Agent-wise sum of neighbors_tensor, i.e. cardinality of each neighborhood.
         """
-        neighbors_tensor = (T_d > 0) & (T_d <= agent_radius**2)
+        neighbors_tensor = (T_d > 0) & (T_d <= agent_radius ** 2)
 
         # Calculating all neighbors counts, Summing over the agents axis: 1.
         neighbors_count = jnp.sum(neighbors_tensor, axis=1)
@@ -127,7 +127,7 @@ def reynolds_dynamics(
     def mixed_steer(
         max_speed: float = 20,
         max_force: float = 40,
-        eps: float = 10**-8,
+        eps: float = 10 ** -8,
     ) -> Tuple[chex.ArrayDevice, chex.ArrayDevice]:
         """Cohesion and alignment calculations for `Rax`: Leader modified Reynolds flocking model in Jax.
             Calculates the cohesion steering based on local interactions with simple agents and with the leader using Reynold's Dynamics
@@ -166,7 +166,7 @@ def reynolds_dynamics(
     def separation_steer(
         max_speed: float = 20,
         max_force: float = 40,
-        eps: float = 10**-8,
+        eps: float = 10 ** -8,
     ) -> chex.Array:
         """Separation calculations of `Rax`: Leader modified Reynolds flocking model in Jax.
 
@@ -196,7 +196,7 @@ def reynolds_dynamics(
         return sep
 
     def interaction_steer(
-        max_force: float = 60, eps: float = 10**-8
+        max_force: float = 60, eps: float = 10 ** -8
     ) -> chex.ArrayDevice:
         """Separation calculations of `Rax`: Leader modified Reynolds flocking model in Jax.
 
@@ -268,7 +268,7 @@ def reynolds_dynamics(
     # Performs neighbors masking.
     total_mask = total_neighbors > 0
     prober_mask = T_prb > 0
-    B += prober_mask[:,:-1]
+    B += prober_mask[:, :-1]
 
     steer = jnp.einsum(
         "ijm,ij->ijm", (w_c * cohesion + w_a * alignment + w_s * separation), total_mask
@@ -286,7 +286,9 @@ def reynolds_dynamics(
 def rk4_integration(dynamics_fun: Callable, state, params):
     dt = params.settings["dt"]
 
-    S1, extra_out = dynamics_fun(state.leader, state.X, state.X_dot, state.B, state.t[0], params)
+    S1, extra_out = dynamics_fun(
+        state.leader, state.X, state.X_dot, state.B, state.t[0], params
+    )
     S2, extra_out = dynamics_fun(
         state.leader,
         state.X + 0.5 * dt * state.X_dot,
@@ -316,7 +318,9 @@ def rk4_integration(dynamics_fun: Callable, state, params):
 
 
 @jit
-def scripted_act(state: EnvState, params: EnvParams, *args) -> Tuple[chex.ArrayDevice, int]:
+def scripted_act(
+    state: EnvState, params: EnvParams, *args
+) -> Tuple[chex.ArrayDevice, int]:
     """Calculates the scripted action for the swarm members.
 
     `Args`:
@@ -370,9 +374,9 @@ def scripted_act(state: EnvState, params: EnvParams, *args) -> Tuple[chex.ArrayD
     X = state.X
     leader = state.leader
     time = state.t[0]
-    #dprint("{x}", x=X.shape)
+    # dprint("{x}", x=X.shape)
     n_env, _, _ = X.shape
-    
+
     # TODO: Actually fix this so that the leader goes to the points that it should but no faste pace.
     ff = 0.66 * (params.scenario["episode_size"] - 1)
 

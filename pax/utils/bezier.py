@@ -23,7 +23,7 @@ class BezierCurve3(eqx.Module):
         """
         return (
             jnp.array(
-                [(1 - s) ** 3, 3 * s * (1 - s) ** 2, 3 * (1 - s) * s**2, s**3]
+                [(1 - s) ** 3, 3 * s * (1 - s) ** 2, 3 * (1 - s) * s ** 2, s ** 3]
             )
             @ self.points
         )

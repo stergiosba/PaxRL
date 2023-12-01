@@ -1,13 +1,13 @@
 [settings]
     seed = 2
-    n_env = 100
+    n_env = 8
     dt = 0.05
-    record = true
+    record = false
 
 [scenario]
     n_agents = 1
-    n_scripted_entities = 20
-    episode_size = 1000
+    n_scripted_entities = 5
+    episode_size = 500
     agent_radius = 40
     ldr_radius = 160
     prb_radius = 80
@@ -17,12 +17,12 @@
     w_a = 0.7
     w_s = 1.0
     Kp_l = 2.0
-    Kp_p = 2.0
+    Kp_p = 0.0
 
 [action_space]
-    low = -100
-    high = 100
-    step = 100
+    low = -250
+    high = 250
+    step = 50
 
 [observation_space]
     low = 0

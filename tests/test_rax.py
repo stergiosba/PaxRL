@@ -63,7 +63,7 @@ class TestRax:
         ).all()
 
         neighbors_tensor = (distance_tensor > 0) & (
-            distance_tensor <= agent_radius**2
+            distance_tensor <= agent_radius ** 2
         )  # .astype(int)
 
         # Calculating all neighbors counts, Summing over the agents axis: 1.
@@ -204,7 +204,7 @@ def mixed_steer(
     """
 
     # Small epsilon to avoid division by zero
-    eps = 10**-7
+    eps = 10 ** -7
     n_env, _, _ = X.shape
     T = total_inf / (total_count[..., None] + eps)
 
@@ -252,7 +252,7 @@ def separation_steer(
     """
 
     # Small epsilon to avoid division by zero
-    eps = 10**-7
+    eps = 10 ** -7
 
     scaled_neighbors_matrix = jnp.nan_to_num(neighbors_matrix / corr_dist_mat)
 
@@ -285,7 +285,7 @@ def interaction_steer(Diff: chex.Array, corr_dist_mat: chex.Array) -> chex.Array
     """
 
     # Small epsilon to avoid division by zero
-    eps = 10**-7
+    eps = 10 ** -7
 
     max_force = 75
 
