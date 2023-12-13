@@ -8,6 +8,7 @@ from jax.debug import print as dprint
 from jax import jit, lax
 from pax.core.state import EnvState
 
+# ONLY USED FOR REFERENCE WILL DELETE
 
 @jit
 def distance_matrix_jax(X: chex.Array) -> chex.Array:

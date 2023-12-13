@@ -3,7 +3,7 @@ import jax.numpy.linalg as la
 from jax import jit, numpy as jnp, nn as jnn
 from typing import Tuple, Dict, Callable
 from jax.debug import print as dprint
-from pax.core.state import EnvState
+from pax.environments.custom.prober import EnvState
 from pax.core.environment import EnvParams
 from functools import partial
 
@@ -273,7 +273,6 @@ def reynolds_dynamics(
     steer = jnp.einsum(
         "ijm,ij->ijm", (w_c * cohesion + w_a * alignment + w_s * separation), total_mask
     )
-    # dprint("{x}",x=la.norm(interaction[0], axis=1))
 
     # This sets the influences on the prober to 0.
     steer = steer.at[..., -1, :].set(jnp.array([0, 0]))
@@ -286,35 +285,36 @@ def reynolds_dynamics(
 def rk4_integration(dynamics_fun: Callable, state, params):
     dt = params.settings["dt"]
 
-    S1, extra_out = dynamics_fun(
-        state.leader, state.X, state.X_dot, state.B, state.t[0], params
+    s1, extra_out = dynamics_fun(
+        state.leader, state.X, state.X_dot, state.B, state.time[0], params
     )
-    S2, extra_out = dynamics_fun(
+    s2, extra_out = dynamics_fun(
         state.leader,
         state.X + 0.5 * dt * state.X_dot,
-        state.X_dot + dt / 2 * S1,
+        state.X_dot + dt / 2 * s1,
         state.B,
-        state.t[0],
+        state.time[0],
         params,
     )
-    S3, extra_out = dynamics_fun(
+    s3, extra_out = dynamics_fun(
         state.leader,
         state.X + 0.5 * dt * state.X_dot,
-        state.X_dot + 0.5 * dt * S2,
+        state.X_dot + 0.5 * dt * s2,
         state.B,
-        state.t[0],
+        state.time[0],
         params,
     )
-    S4, extra_out = dynamics_fun(
+    s4, extra_out = dynamics_fun(
         state.leader,
         state.X + dt * state.X_dot,
-        state.X_dot + dt * S3,
+        state.X_dot + dt * s3,
         state.B,
-        state.t[0],
+        state.time[0],
         params,
     )
 
-    return S1 + 2 * (S2 + S3) + S4, extra_out
+    s = s1 + 2 * (s2 + s3) + s4
+    return s, extra_out
 
 
 @jit
@@ -373,11 +373,11 @@ def scripted_act(
 
     X = state.X
     leader = state.leader
-    time = state.t[0]
+    time = state.time[0]
     # dprint("{x}", x=X.shape)
     n_env, _, _ = X.shape
 
-    # TODO: Actually fix this so that the leader goes to the points that it should but no faste pace.
+    # TODO: Actually fix this so that the leader goes to the points that it should but no faster pace.
     ff = 0.66 * (params.scenario["episode_size"] - 1)
 
     steer, extra_out = rk4_integration(reynolds_dynamics, state, params)
@@ -386,7 +386,7 @@ def scripted_act(
     u_leader = params.scenario["Kp_l"] * e_leader
     steer = steer.at[jnp.arange(n_env), leader].add(u_leader)
 
-    e_prob = swarm_center() - X[jnp.arange(n_env), -1]
+    e_prob = swarm_leader() - X[jnp.arange(n_env), -1]
     u_prob = params.scenario["Kp_p"] * e_prob
     steer = steer.at[jnp.arange(n_env), -1].add(u_prob)
 

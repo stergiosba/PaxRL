@@ -1,5 +1,25 @@
-[ppo_params]
-    # General parameters
+[environment]
+    # Environment parameters
+    [environment.settings]
+        seed = 42
+        n_env = 8
+        dt = 0.05
+        record = false
+
+    [environment.scenario]
+        n_agents = 1
+        episode_size = 1024
+
+    [environment.action_space]
+        low = -250
+        high = 250
+        step = 50
+
+    [environment.observation_space]
+        low = 0
+        high = 800
+[ppo]
+    # Proximal Policy Optimization parameters
     num_train_steps = 500000
     evaluate_every_epochs = 1000
     render_every_epochs = 1000
@@ -12,13 +32,13 @@
     num_train_envs = 8 # "Number of environments for training"
     n_steps = 256 # "Number of steps per environment per update"
     n_minibatch = 8 # "Number of PPO minibatches"
-    epoch_ppo = 4 # "Number of epochs per PPO update"
+    epoch_ppo = 1 # "Number of epochs per PPO update"
     clip_eps = 0.2 # "Clipping parameter for PPO"
     entropy_coeff = 0.01 # "Entropy coefficient for loss calculation" 
     critic_coeff = 0.5 # "Coefficient for critic loss"
 
     # Optimizer parameters
-    lr_begin = 5e-05
-    lr_end = 5e-05
+    lr_begin = 5e-03
+    lr_end = 5e-06
     lr_warmup = 0.05 # Prop epochs until warmup is completed 
     max_grad_norm = 1.0

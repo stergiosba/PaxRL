@@ -27,7 +27,7 @@ class Environment(eqx.Module):
         key: chex.PRNGKey,
         state: EnvState,
         action: chex.ArrayDevice,
-        extra_in: chex.ArrayDevice,
+        extra_in: chex.ArrayDevice = None,
     ) -> Tuple[chex.ArrayDevice, EnvState, chex.ArrayDevice, chex.ArrayDevice]:
         """Steps the environment. This is to be used externally after implementing the reset_env function for a specific environment.
 
@@ -75,7 +75,7 @@ class Environment(eqx.Module):
         key: chex.PRNGKey,
         state: EnvState,
         action: chex.ArrayDevice,
-        extra_in: chex.ArrayDevice,
+        extra_in: chex.ArrayDevice=None,
     ):
         """Steps a specific environment (To be implemented on a per-environment basis)
 

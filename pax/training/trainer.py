@@ -5,17 +5,15 @@ import numpy as np
 import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jrandom
-import threading
-import pax.render as trend
 from collections import defaultdict
 from pax.training import RolloutManager, BatchManager, TrainState
 from pax.core.environment import EnvState
 from pax.utils.read_toml import read_config
-from pax.scenarios.rax import scripted_act
+from pax.environments import scripted_act
 from jax import jit, vmap
 from tqdm import tqdm
 from typing import Tuple
-from jax.debug import print as dprint
+from jax.debug import print as dprint, breakpoint as brk
 from tensorflow_probability.substrates import jax as tfp
 
 
@@ -24,8 +22,9 @@ class Trainer:
         self.env = env
         self.map_action = jit(vmap(env.action_space.map_action, in_axes=0))
 
-    def __call__(self, model, key, train_config_file="train_cfg", renderer= None):
-        #@eqx.filter_jit
+    def __call__(self, model, key, train_config):
+        
+        @eqx.filter_jit
         def get_transition(
             train_state: TrainState,
             obs: chex.ArrayDevice,
@@ -33,16 +32,20 @@ class Trainer:
             batch,
             key: chex.PRNGKey,
         ):
+            
             action_unmapped, log_pi, value, new_key = rollout_manager.select_action(
                 train_state.model, obs, key
             )
             action_agent = self.map_action(action_unmapped)
             action, extra_in = scripted_act(state, self.env.params)
             action = action.at[:, -1].set(action_agent)
-            #dprint("{x}", x=action_agent)
+
+            # action_unmapped, log_pi, value, new_key = rollout_manager.select_action(train_state.model, obs, key)
+            # action_agent = self.map_action(action_unmapped)
+            # action = action_agent
 
             new_key, key_step = jrandom.split(key)
-            b_key = jrandom.split(key_step, ppo_config["num_train_envs"])
+            b_key = jrandom.split(key_step, train_config["num_train_envs"])
             # # Automatic env resetting in gymnax step!
             next_obs, next_state, reward, done = rollout_manager.batch_step(
                  b_key, state, action, extra_in
@@ -52,39 +55,34 @@ class Trainer:
                 batch, obs, action_unmapped, reward, done, log_pi, value.flatten()
             )
             return train_state, next_obs, next_state, batch, new_key
-
-        train_cfg = read_config(train_config_file)
-        ppo_config = train_cfg["ppo_params"]
         
         num_total_epochs = int(
-            ppo_config["num_train_steps"] // ppo_config["num_train_envs"] + 1
+            train_config["num_train_steps"] // train_config["num_train_envs"] + 1
         )
 
-        num_steps_warm_up = int(ppo_config["num_train_steps"] * ppo_config["lr_warmup"])
+        num_steps_warm_up = int(train_config["num_train_steps"] * train_config["lr_warmup"])
         schedule_fn = optax.linear_schedule(
-            init_value=-float(ppo_config["lr_begin"]),
-            end_value=-float(ppo_config["lr_end"]),
+            init_value=-float(train_config["lr_begin"]),
+            end_value=-float(train_config["lr_end"]),
             transition_steps=num_steps_warm_up,
         )
 
         optimizer = optax.chain(
-            optax.clip_by_global_norm(ppo_config["max_grad_norm"]),
+            optax.clip_by_global_norm(train_config["max_grad_norm"]),
             optax.scale_by_adam(eps=1e-5),
             optax.scale_by_schedule(schedule_fn),
         )
 
         train_state = TrainState(model=model, optimizer=optimizer)
 
-        # I don't like the map_action function, but it's necessary for now.
         rollout_manager = RolloutManager(self.env, self.map_action)
         batch_manager = BatchManager(
-            train_config=train_cfg["ppo_params"],
+            train_config=train_config,
             action_space=self.env.action_space,
             state_shape=self.env.observation_space.size,
         )
         # Reset the batch buffer
         batch = batch_manager.reset()
-
         # Split the key as necessary
         rng, rng_step, rng_reset, rng_eval, rng_update = jrandom.split(key, 5)
 
@@ -97,7 +95,7 @@ class Trainer:
         total_steps = 0
         log_steps, log_return = [], []
         T = tqdm(
-            range(num_total_epochs),
+            range(1, num_total_epochs+1),
             colour="#FFA500",
             desc="PPO",
             leave=True,
@@ -111,36 +109,37 @@ class Trainer:
             # Increment the step counter
             total_steps += self.env.params.settings["n_env"]
 
-            if step % (ppo_config["n_steps"] + 1) == 0:
+            if step % (train_config["n_steps"] + 1) == 0:
                 metric_dict, train_state, rng_update = update(
                     train_state,
                     batch_manager.get(batch),
-                    ppo_config["num_train_envs"],
-                    ppo_config["n_steps"],
-                    ppo_config["n_minibatch"],
-                    ppo_config["epoch_ppo"],
-                    ppo_config["clip_eps"],
-                    ppo_config["entropy_coeff"],
-                    ppo_config["critic_coeff"],
+                    train_config["num_train_envs"],
+                    train_config["n_steps"],
+                    train_config["n_minibatch"],
+                    train_config["epoch_ppo"],
+                    train_config["clip_eps"],
+                    train_config["entropy_coeff"],
+                    train_config["critic_coeff"],
                     rng_update,
                 )
                 batch = batch_manager.reset()
 
-            if (step + 1) % ppo_config["evaluate_every_epochs"] == 0:
+            if (step + 1) % train_config["evaluate_every_epochs"] == 0:
                 rng, rng_eval = jrandom.split(rng)
-                show_state, rewards = rollout_manager.batch_evaluate(
+                show_state, reward, rewards = rollout_manager.batch_evaluate(
                     rng_eval,
                     train_state,
-                    ppo_config["num_test_rollouts"],
+                    train_config["num_test_rollouts"],
                 )
                 log_steps.append(total_steps)
                 log_return.append(rewards)
                 T.set_description(f"Rewards: {rewards}")
                 T.refresh()
 
-                if (step + 1) % ppo_config["render_every_epochs"] == 0:
-                    renderer = trend.Renderer()
-                    renderer.show(self.env, show_state, log_return, self.env.params.settings["record"]) 
+                print(reward)
+                if (step + 1) % train_config["render_every_epochs"] == 0:
+                    print(f"Rendering Performance")
+                    self.env.render(show_state, log_return)
 
                 # if mle_log is not None:
                 #     mle_log.update(
@@ -170,24 +169,23 @@ def loss_actor_and_critic(
     critic_coeff: float,
     entropy_coeff: float,
 ) -> jnp.ndarray:
+    # value_pred, logits = jax.vmap(model)(obs)
     value_pred, split_logits = jax.vmap(model)(obs)
-
-    #pi = tfp.distributions.Categorical(logits=logits)
+    key_dumm  = jrandom.PRNGKey(0)
+    # pi = tfp.distributions.Categorical(logits=logits)
     multi_pi = [tfp.distributions.Categorical(logits=logits) for logits in split_logits]
     value_pred = value_pred[:, 0]
-
     # TODO: Figure out why training without 0 breaks categorical model
-    # And why with 0 breaks gaussian model pi
-    #log_prob = pi.log_prob(action[..., -1])
-    log_prob = jnp.vstack([pi.log_prob(a) for a, pi in zip(action, multi_pi)])
-
+    # And why with 0 breaks gaussian model pi (gymnax comment)
+    # log_prob = pi.log_prob(action[..., -1])
+    f = jnp.vstack([pi.log_prob(a) for a, pi in zip(action[..., -1].T, multi_pi)])
+    log_prob = f.sum(0)
     value_pred_clipped = value_old + (value_pred - value_old).clip(-clip_eps, clip_eps)
     value_losses = jnp.square(value_pred - target)
     value_losses_clipped = jnp.square(value_pred_clipped - target)
     value_loss = 0.5 * jnp.maximum(value_losses, value_losses_clipped).mean()
 
     ratio = jnp.exp(log_prob - log_pi_old)
-
     gae_mean = gae.mean()
     gae = (gae - gae_mean) / (gae.std() + 1e-8)
     loss_actor1 = ratio * gae
@@ -196,11 +194,13 @@ def loss_actor_and_critic(
     loss_actor = loss_actor.mean()
 
     #entropy = pi.entropy().mean()
+    cc = jnp.vstack([pi.entropy() for pi in multi_pi])
+    
+    # H(X, Y) = H(X) + H(Y) for entropy of independent random variables X and Y.
     entropy = jnp.vstack([pi.entropy() for pi in multi_pi]).sum(0).mean()
     
 
     total_loss = loss_actor + critic_coeff * value_loss - entropy_coeff * entropy
-
     return total_loss, (
         value_loss,
         loss_actor,
@@ -221,7 +221,7 @@ def update(
     clip_eps: float,
     entropy_coeff: float,
     critic_coeff: float,
-    rng: jrandom.PRNGKey,
+    rng: chex.PRNGKey,
 ):
     """Perform multiple epochs of updates with multiple updates."""
     obs, action, log_pi_old, value, target, gae = batch
@@ -266,6 +266,7 @@ def update(
         avg_metrics_dict["value_pred"] += np.asarray(value_pred)
         avg_metrics_dict["target"] += np.asarray(target_val)
         avg_metrics_dict["gae"] += np.asarray(gae_val)
+        rng, _ = jrandom.split(rng)
 
     for k, v in avg_metrics_dict.items():
         avg_metrics_dict[k] = v / (epoch_ppo)
@@ -302,7 +303,7 @@ def update_epoch(
             critic_coeff=critic_coeff,
             entropy_coeff=entropy_coeff,
         )
-        #dprint("{x}", x=grads.actor.layers[0].weight)
+        #dprint("{x}", x=grads.actor.layers[2].weight)
         train_state = train_state.apply_gradients(grads)
 
     return train_state, total_loss

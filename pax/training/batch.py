@@ -21,11 +21,11 @@ class BatchManager(object):
         self.action_space = action_space
         self.buffer_size = self.num_envs * self.n_steps
         self.state_shape = state_shape
+        # self.state_shape = 2
 
         self.reset()
 
     @partial(jit, static_argnums=0)
-    #@eqx.filter_jit
     def reset(self):
         return {
             "states": jnp.empty(
@@ -43,7 +43,6 @@ class BatchManager(object):
         }
 
     @partial(jit, static_argnums=0)
-    #@eqx.filter_jit
     def append(self, buffer, state, action, reward, done, log_pi, value):
         return {
             "states": buffer["states"].at[buffer["_step"]].set(state),
@@ -56,7 +55,6 @@ class BatchManager(object):
         }
 
     @partial(jit, static_argnums=0)
-    #@eqx.filter_jit
     def get(self, buffer):
         gae, target = self.calculate_gae(
             value=buffer["values_old"],

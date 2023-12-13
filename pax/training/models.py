@@ -70,6 +70,8 @@ class Agent(eqx.Module):
         # TODO: Refactor this agent to be more general.
 
         obs_shape = env.observation_space.shape
+        # obs_shape = 2
+        #print(env.action_space.n_axes)
         keys = jrandom.split(key, 6)
 
         self.critic = eqx.nn.Sequential(
@@ -118,6 +120,7 @@ class Agent(eqx.Module):
         logits = self.actor(x)
 
         split_logits = jnp.split(logits, [11,11])
+        #dprint("{x}", x=split_logits)
         split_logits = [split_logits[0], split_logits[2]]
 
         return value, split_logits            
