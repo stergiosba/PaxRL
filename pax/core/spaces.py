@@ -18,6 +18,10 @@ class Space(eqx.Module):
 
     def contains(self, x: chex.Scalar) -> chex.Scalar:
         raise NotImplementedError
+    
+    @property
+    def name(self) -> str:
+        return self.__class__.__name__
 
 
 class Discrete(Space):
@@ -70,7 +74,7 @@ class Discrete(Space):
         return self.n
 
     def __repr__(self):
-        return f"{__class__.__name__}({self.start}, {self.n}, {self.dtype})"
+        return f"{self.name}({self.start}, {self.n}, {self.dtype})"
 
 
 class SeparateGrid(Space):
@@ -82,8 +86,8 @@ class SeparateGrid(Space):
         - `dtype: (Union[jnp.float32, jnp.int32])`: Datatype of the action.
     """
 
-    axis_1: chex.ArrayDevice
-    axis_2: chex.ArrayDevice
+    _axis_1: chex.ArrayDevice
+    _axis_2: chex.ArrayDevice
     dtype: Union[jnp.float32, jnp.int32]
 
     def __init__(self, act_range: Sequence, dtype=jnp.float32):
@@ -99,8 +103,8 @@ class SeparateGrid(Space):
         else:
             low, high, step = act_range
 
-        self.axis_1 = jnp.mgrid[low : high + 0.1 : step]
-        self.axis_2 = jnp.mgrid[low : high + 0.1 : step]
+        self._axis_1 = jnp.mgrid[low : high + 0.1 : step]
+        self._axis_2 = jnp.mgrid[low : high + 0.1 : step]
         self.dtype = dtype
 
     @eqx.filter_jit
@@ -109,8 +113,8 @@ class SeparateGrid(Space):
     ) -> chex.ArrayDevice:
         """Sample random action uniformly from set of categorical choices."""
         key_1, key_2 = jrandom.split(key)
-        axis_1_sample = jrandom.choice(key_1, self.axis_1, shape=shape)
-        axis_2_sample = jrandom.choice(key_2, self.axis_2, shape=shape)
+        axis_1_sample = jrandom.choice(key_1, self._axis_1, shape=shape)
+        axis_2_sample = jrandom.choice(key_2, self._axis_2, shape=shape)
         return jnp.vstack((axis_1_sample, axis_2_sample)).T
 
     def contains(self, x: int) -> chex.Array:
@@ -121,16 +125,7 @@ class SeparateGrid(Space):
         return range_cond
 
     def map_action(self, action_idces: chex.ArrayDevice) -> chex.ArrayDevice:
-        return jnp.array((self.axis_1[action_idces[0]], self.axis_2[action_idces[1]])).T
-
-    @property
-    def size(self) -> int:
-        """Returns the size of the space.
-
-        Returns:
-            - `size (int)`: The size of the space.
-        """
-        return self.axis_1.shape[0] * self.axis_2.shape[0]
+        return jnp.array((self._axis_1[action_idces[0]], self._axis_2[action_idces[1]])).T
 
     @property
     def shape(self) -> Tuple:
@@ -139,7 +134,17 @@ class SeparateGrid(Space):
         Returns:
             - `shape (Tuple)`: The shape of the space.
         """
-        return (self.axis_1.shape[0], self.axis_2.shape[0])
+        return (self._axis_1.shape[0], self._axis_2.shape[0])
+    
+    @property
+    def size(self) -> int:
+        """Returns the size of the space.
+
+        Returns:
+            - `size (int)`: The size of the space.
+        """
+        return jnp.array(self.shape).sum()
+
     
     @property
     def n_axes(self) -> int:
@@ -148,10 +153,11 @@ class SeparateGrid(Space):
         Returns:
             - `n_axes (int)`: The number of distinct axes.
         """
-        return self.axis_1.shape[0] + self.axis_2.shape[0]
+        return len(self.shape)
+    
 
     def __repr__(self):
-        return f"{__class__.__name__} (self.{self.axis_1},{self.axis_2}, {self.dtype})"
+        return f"{self.name} (self.{self._axis_1},{self._axis_2}, {self.dtype})"
 
 
 class Grid(Space):
@@ -209,7 +215,7 @@ class Grid(Space):
         return jnp.array(self.categories.shape).prod()
 
     def __repr__(self):
-        return f"{__class__.__name__}({self.categories.shape}, {self.categories}, {self.dtype})"
+        return f"{self.name}({self.categories.shape}, {self.categories}, {self.dtype})"
 
 
 class Box(Space):
@@ -254,5 +260,5 @@ class Box(Space):
 
     def __repr__(self):
         return (
-            f"{__class__.__name__}({self.low}, {self.high}, {self.shape}, {self.dtype})"
+            f"{self.name}({self.low}, {self.high}, {self.shape}, {self.dtype})"
         )

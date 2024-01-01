@@ -4,15 +4,9 @@ import jax.random as jrandom
 import jax.numpy.linalg as la
 import numpy as np
 import pax.training as paxt
-import matplotlib
-import matplotlib.pyplot as plt
 import pandas as pd
 from pax.training.models import Agent
 from pax import make
-from pax.utils.read_toml import read_config
-
-matplotlib.use("Qt5Agg")
-
 
 def prober_test(env_name="Prober-v0"):
     env, _, train_config = make(env_name, train=True)
@@ -53,14 +47,6 @@ def target_test(env_name="Target-v0"):
     s = time.time()
 
     num_total_epochs, log_steps, log_return = trainer(model, key, train_config)
-
-    # fig, ax = plt.subplots()
-    # ax.plot(log_steps)
-    # ax.set_xlabel("time")
-    # ax.set_ylabel("reward")
-    # ax.set_title("Reward over time")
-    # ax.grid()
-    # plt.show()
     print(f"Time for trainer: {time.time()-s}")
 
 

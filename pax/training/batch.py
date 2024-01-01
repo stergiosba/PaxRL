@@ -33,7 +33,7 @@ class BatchManager(object):
                 dtype=jnp.float32,
             ),
             "actions": jnp.empty(
-                (self.n_steps, self.num_envs, 2),
+                (self.n_steps, self.num_envs, self.action_space.n_axes),
             ),
             "rewards": jnp.empty((self.n_steps, self.num_envs), dtype=jnp.float32),
             "dones": jnp.empty((self.n_steps, self.num_envs), dtype=jnp.uint8),

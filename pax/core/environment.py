@@ -100,3 +100,12 @@ class Environment(eqx.Module):
             NotImplementedError: Not implemented
         """
         raise NotImplementedError
+
+    @property
+    def name(self) -> str:
+        """Returns the name of the environment
+
+        Returns:
+            name (str): The name of the environment
+        """
+        return self.__class__.__name__

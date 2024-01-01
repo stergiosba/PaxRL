@@ -23,7 +23,6 @@ class Trainer:
         self.map_action = jit(vmap(env.action_space.map_action, in_axes=0))
 
     def __call__(self, model, key, train_config):
-        
         @eqx.filter_jit
         def get_transition(
             train_state: TrainState,
@@ -32,7 +31,6 @@ class Trainer:
             batch,
             key: chex.PRNGKey,
         ):
-            
             action_unmapped, log_pi, value, new_key = rollout_manager.select_action(
                 train_state.model, obs, key
             )
@@ -48,19 +46,21 @@ class Trainer:
             b_key = jrandom.split(key_step, train_config["num_train_envs"])
             # # Automatic env resetting in gymnax step!
             next_obs, next_state, reward, done = rollout_manager.batch_step(
-                 b_key, state, action, extra_in
+                b_key, state, action, extra_in
             )
 
             batch = batch_manager.append(
                 batch, obs, action_unmapped, reward, done, log_pi, value.flatten()
             )
             return train_state, next_obs, next_state, batch, new_key
-        
+
         num_total_epochs = int(
             train_config["num_train_steps"] // train_config["num_train_envs"] + 1
         )
 
-        num_steps_warm_up = int(train_config["num_train_steps"] * train_config["lr_warmup"])
+        num_steps_warm_up = int(
+            train_config["num_train_steps"] * train_config["lr_warmup"]
+        )
         schedule_fn = optax.linear_schedule(
             init_value=-float(train_config["lr_begin"]),
             end_value=-float(train_config["lr_end"]),
@@ -95,7 +95,7 @@ class Trainer:
         total_steps = 0
         log_steps, log_return = [], []
         T = tqdm(
-            range(1, num_total_epochs+1),
+            range(1, num_total_epochs + 1),
             colour="#FFA500",
             desc="PPO",
             leave=True,
@@ -136,7 +136,7 @@ class Trainer:
                 T.set_description(f"Rewards: {rewards}")
                 T.refresh()
 
-                print(reward)
+                # print(reward)
                 if (step + 1) % train_config["render_every_epochs"] == 0:
                     print(f"Rendering Performance")
                     self.env.render(show_state, log_return)
@@ -171,38 +171,40 @@ def loss_actor_and_critic(
 ) -> jnp.ndarray:
     # value_pred, logits = jax.vmap(model)(obs)
     value_pred, split_logits = jax.vmap(model)(obs)
-    key_dumm  = jrandom.PRNGKey(0)
     # pi = tfp.distributions.Categorical(logits=logits)
-    multi_pi = [tfp.distributions.Categorical(logits=logits) for logits in split_logits]
+    multi_pi = tfp.distributions.Categorical(logits=split_logits)
     value_pred = value_pred[:, 0]
     # TODO: Figure out why training without 0 breaks categorical model
     # And why with 0 breaks gaussian model pi (gymnax comment)
     # log_prob = pi.log_prob(action[..., -1])
-    f = jnp.vstack([pi.log_prob(a) for a, pi in zip(action[..., -1].T, multi_pi)])
-    log_prob = f.sum(0)
-    value_pred_clipped = value_old + (value_pred - value_old).clip(-clip_eps, clip_eps)
-    value_losses = jnp.square(value_pred - target)
-    value_losses_clipped = jnp.square(value_pred_clipped - target)
-    value_loss = 0.5 * jnp.maximum(value_losses, value_losses_clipped).mean()
 
+    # Calulate the actor loss
+    log_prob = multi_pi.log_prob(action.T).sum(axis=1)
     ratio = jnp.exp(log_prob - log_pi_old)
     gae_mean = gae.mean()
     gae = (gae - gae_mean) / (gae.std() + 1e-8)
-    loss_actor1 = ratio * gae
-    loss_actor2 = jnp.clip(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * gae
-    loss_actor = -jnp.minimum(loss_actor1, loss_actor2)
+    loss_actor_unclipped = ratio * gae
+    loss_actor_clipped = jnp.clip(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * gae
+    loss_actor = -jnp.minimum(loss_actor_unclipped, loss_actor_clipped)
     loss_actor = loss_actor.mean()
 
-    #entropy = pi.entropy().mean()
-    cc = jnp.vstack([pi.entropy() for pi in multi_pi])
-    
-    # H(X, Y) = H(X) + H(Y) for entropy of independent random variables X and Y.
-    entropy = jnp.vstack([pi.entropy() for pi in multi_pi]).sum(0).mean()
-    
+    # Calculate the critic loss
+    value_pred_clipped = value_old + (value_pred - value_old).clip(-clip_eps, clip_eps)
+    loss_value_clipped = jnp.square(value_pred_clipped - target)
+    loss_value_unclipped = jnp.square(value_pred - target)
+    loss_value = 0.5 * jnp.maximum(loss_value_clipped, loss_value_unclipped).mean()
 
-    total_loss = loss_actor + critic_coeff * value_loss - entropy_coeff * entropy
+    # Calculate the entropy loss
+    # H(X, Y) = H(X) + H(Y) for entropy of independent random variables X and Y.
+    # entropy = pi.entropy().mean()
+    entropy = multi_pi.entropy().sum(axis=0).mean()
+
+    # Calculate the total loss
+    total_loss = loss_actor + critic_coeff * loss_value - entropy_coeff * entropy
+
+    # brk()
     return total_loss, (
-        value_loss,
+        loss_value,
         loss_actor,
         entropy,
         value_pred.mean(),
@@ -303,7 +305,8 @@ def update_epoch(
             critic_coeff=critic_coeff,
             entropy_coeff=entropy_coeff,
         )
-        #dprint("{x}", x=grads.actor.layers[2].weight)
+        # dprint("{x}", x=grads.actor.layers[2].weight)
+        # brk()
         train_state = train_state.apply_gradients(grads)
 
     return train_state, total_loss

@@ -101,8 +101,8 @@ class Proberenv(Environment):
 
         init_X_scripted = jrandom.uniform(
             key,
-            minval=jnp.array([75, 600]),
-            maxval=jnp.array([125, 700]),
+            minval=jnp.array([75, 75]),
+            maxval=jnp.array([125, 125]),
             shape=(self.n_scripted, 2),
         )
 
@@ -118,12 +118,12 @@ class Proberenv(Environment):
         init_X_agents = jrandom.uniform(
             key,
             minval=jnp.array([400, 400]),
-            maxval=jnp.array([601, 601]),
+            maxval=jnp.array([500, 500]),
             shape=(self.n_agents, 2),
         )
 
         init_X_dot_agents = (
-            jrandom.uniform(key, minval=-0, maxval=0, shape=(self.n_agents, 2))
+            jrandom.uniform(key, minval=-1, maxval=1, shape=(self.n_agents, 2))
             * 10
             * jnp.sqrt(2)
         )
@@ -132,7 +132,7 @@ class Proberenv(Environment):
         leader = 0
 
         final_goal = jrandom.uniform(
-            key, minval=jnp.array([30, 50]), maxval=jnp.array([70, 125]), shape=(2,)
+            key, minval=jnp.array([650, 50]), maxval=jnp.array([700, 125]), shape=(2,)
         )
         init_leader = init_X_scripted[leader]
 
@@ -232,11 +232,11 @@ class Proberenv(Environment):
         # reward = r_angle(state.X_dot_prev, state.X_dot)
 
         reward = (
-            1.0 * (r_leader2(state) < 100)
-            + 1.0 * r_max_interaction(new_B, state.leader)
-            + 1.0 * r_target(state)
+            1.0 * (r_leader2(state) < 75)
+            + 0.0 * r_max_interaction(new_B, state.leader)
+            + 0.0 * r_target(state)
         )
-        reward = jnp.clip(reward, a_min=-10, a_max=10)
+        # reward = jnp.clip(reward, a_min=-1, a_max=1)
         done = self.is_terminal(state)
 
         return (obs, state, jnp.array([reward]), done)
@@ -250,12 +250,12 @@ class Proberenv(Environment):
         done_2 = state.time == self.params.scenario["episode_size"]
 
         done_3 = lax.select(
-            jnp.any(state.X <= self.observation_space.low),
+            jnp.any(state.X[-1] <= self.observation_space.low),
             jnp.array([1.0]),
             jnp.array([0.0]),
         )
         done_4 = lax.select(
-            jnp.any(state.X >= self.observation_space.high),
+            jnp.any(state.X[-1] >= self.observation_space.high),
             jnp.array([1.0]),
             jnp.array([0.0]),
         )
@@ -264,10 +264,6 @@ class Proberenv(Environment):
         done = jnp.logical_or(done_12, done_34)
 
         return done
-
-    @property
-    def name(self):
-        return "Prober-v0"
 
     def render(self, state, log_returns):
         try:
@@ -316,6 +312,12 @@ class Proberenv(Environment):
                         10,
                         imgui.get_color_u32_rgba(0, 1, 0, 1),
                     )
+                    draw_list.add_circle_filled(
+                        P[f, 0, i, 0],
+                        P[f, 0, i, 1],
+                        100,
+                        imgui.get_color_u32_rgba(0, 1, 0, 0.2),
+                    )
                 else:
                     draw_list.add_circle_filled(
                         P[f, 0, i, 0],
@@ -333,6 +335,15 @@ class Proberenv(Environment):
 
             draw_list.add_circle_filled(
                 G[f, 0, 0], G[f, 0, 1], 10, imgui.get_color_u32_rgba(1, 1, 0, 1)
+            )
+
+            draw_list.add_line(
+                P[f, 0, L[f, 0], 0],
+                P[f, 0, L[f, 0], 1],
+                P[f, 0, -1, 0],
+                P[f, 0, -1, 1],
+                imgui.get_color_u32_rgba(1, 1, 1, 1),
+                2,
             )
             return draw_list
 
@@ -393,6 +404,19 @@ class Proberenv(Environment):
 
                 if x:
                     auto_start = True
+                    
+                imgui.set_next_window_size(200, 200)
+                imgui.set_next_window_position(800, 200)
+                imgui.plot_lines(
+                    "Returns",
+                    np.array(log_returns),
+                    overlay_text="SIN() over time",
+                    # offset by one item every milisecond, plot values
+                    # buffer its end wraps around
+                    # values_offset=int(time() * 100) % L[-1],
+                    # 0=autoscale => (0, 50) = (autoscale width, 50px height)
+                    graph_size=(0, 100),
+                )
 
                 imgui.render()
 

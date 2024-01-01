@@ -53,7 +53,7 @@ class QRLinear(eqx.nn.Linear):
     def __init__(self, input_dim: int, output_dim: int, gain: float, key: chex.PRNGKey):
         super().__init__(input_dim, output_dim, key=key)
         self.weight = orthogonal_init(self.weight, gain, key)
-        self.bias = 0.05 * jnp.ones_like(self.bias)
+        self.bias = 0.005 * jnp.ones_like(self.bias)
 
     # def __call__(self, x, *, key=None):
     #     # return super().__call__(x, key=key)
@@ -65,27 +65,29 @@ class Agent(eqx.Module):
 
     critic: eqx.Module
     actor: eqx.Module
+    action_space_size: chex.ArrayDevice
 
     def __init__(self, env: Environment, key: chex.PRNGKey):
         # TODO: Refactor this agent to be more general.
 
         obs_shape = env.observation_space.shape
         # obs_shape = 2
-        #print(env.action_space.n_axes)
+        self.action_space_size = env.action_space.size
+        # print(env.action_space)
         keys = jrandom.split(key, 6)
 
         self.critic = eqx.nn.Sequential(
             [
                 QRLinear(
                     jnp.array(obs_shape).prod(),
-                    64,
-                    jnp.sqrt(2.0),
+                    128,
+                    jnp.sqrt(0.02),
                     key=keys[0],
                 ),
-                eqx.nn.Lambda(jnn.relu),
-                QRLinear(64, 64, jnp.sqrt(2.0), key=keys[1]),
-                eqx.nn.Lambda(jnn.relu),
-                QRLinear(64, 1, jnp.array([1.0]), key=keys[2]),
+                eqx.nn.Lambda(jnn.tanh),
+                QRLinear(128, 64, jnp.sqrt(0.02), key=keys[1]),
+                eqx.nn.Lambda(jnn.tanh),
+                QRLinear(64, 1, jnp.array([0.01]), key=keys[2]),
             ]
         )
 
@@ -93,14 +95,14 @@ class Agent(eqx.Module):
             [
                 QRLinear(
                     jnp.array(obs_shape).prod(),
-                    64,
-                    jnp.sqrt(2),
+                    128,
+                    jnp.sqrt(0.02),
                     key=keys[3],
                 ),
-                eqx.nn.Lambda(jnn.relu),
-                QRLinear(64, 64, jnp.sqrt(2.0), key=keys[4]),
-                eqx.nn.Lambda(jnn.relu),
-                QRLinear(64, env.action_space.n_axes, jnp.array([0.01]), key=keys[5]),
+                eqx.nn.Lambda(jnn.tanh),
+                QRLinear(128, 64, jnp.sqrt(0.02), key=keys[4]),
+                eqx.nn.Lambda(jnn.tanh),
+                QRLinear(64, self.action_space_size, jnp.array([0.01]), key=keys[5]),
             ]
         )
 
@@ -119,8 +121,6 @@ class Agent(eqx.Module):
         value = self.critic(x)
         logits = self.actor(x)
 
-        split_logits = jnp.split(logits, [11,11])
-        #dprint("{x}", x=split_logits)
-        split_logits = [split_logits[0], split_logits[2]]
+        split_logits = jnp.split(logits, [11])
 
         return value, split_logits            

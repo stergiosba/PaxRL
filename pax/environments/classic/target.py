@@ -177,9 +177,6 @@ class Targetenv(Environment):
         done = jnp.logical_or(done_12, done_34)
         return done
 
-    @property
-    def name(self):
-        return "TargetEnv-v0"
 
     def __repr__(self):
         return f"{self.name}: {str(self.__dict__)}"

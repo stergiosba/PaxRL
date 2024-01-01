@@ -18,11 +18,9 @@ def policy(
     key: chex.PRNGKey,
 ):
     value, split_logits = jax.vmap(model)(obs)
-    multi_pi = [tfp.distributions.Categorical(logits=logits) for logits in split_logits]
+    multi_pi = tfp.distributions.Categorical(logits=split_logits)
     return value, multi_pi
 
-
-# should this be eqx.Module?
 class RolloutManager(object):
     def __init__(self, env: Environment, map_action: Callable):
         # Setup functionalities for vectorized batch rollout
@@ -46,8 +44,8 @@ class RolloutManager(object):
         key: chex.PRNGKey,
     ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, chex.PRNGKey]:
         value, multi_pi = policy(model, obs, key)
-        action = jnp.vstack([pi.sample(seed=key) for pi in multi_pi])
-        log_prob = jnp.vstack([pi.log_prob(a) for a, pi in zip(action, multi_pi)])
+        action = multi_pi.sample(seed=key)
+        log_prob = multi_pi.log_prob(action)
         return action.T, log_prob.sum(0), value.flatten(), key
     
 
