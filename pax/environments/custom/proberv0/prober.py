@@ -1,12 +1,13 @@
-from jax import lax, jit, nn as jnn
-import jax.numpy as jnp
-import jax.random as jrandom
+import chex
+import equinox as eqx
+import numpy as np
 import jax.numpy.linalg as la
-from jax.debug import print as dprint  # type: ignore
+from jax import lax, jit, nn as jnn, numpy as jnp, random as jrandom
 from pax.utils.bezier import BezierCurve3
 from pax.core.environment import Environment, EnvParams
-from pax.core.spaces import *
+from pax.core.spaces import SeparateGrid, Box
 from typing import Any, Dict, Sequence, Tuple, Union
+from jax.debug import print as dprint  # type: ignore
 
 
 class EnvState(eqx.Module):
@@ -32,10 +33,10 @@ class EnvState(eqx.Module):
         return f"{__class__.__name__}: {str(self.__dict__)}"
 
 
-class Proberenv(Environment):
+class Prober(Environment):
 
-    """The main `Pax` class.
-        It encapsulates an environment with arbitrary dynamics.
+    """The main `Prober` environment class.
+        Reynolds swarm dynamics with probing interactions.
         An environment can be partially or fully observable.
 
     `Attributes`:
@@ -52,6 +53,10 @@ class Proberenv(Environment):
     action_space: SeparateGrid
     observation_space: Box
     params: EnvParams
+    
+    @property
+    def version(self):
+        return "0.1"
 
     def __init__(self, params: Dict):
         """
@@ -70,9 +75,6 @@ class Proberenv(Environment):
         o_low, o_high = self.params.observation_space.values()
         o_shape = (self.n_agents + self.n_scripted, 2)
         self.observation_space = Box(o_low, o_high, o_shape, o_dtype)
-
-        print(f"Initialized {self.name} environment")
-        print(self)
 
     @eqx.filter_jit
     def get_obs(self, state: EnvState) -> Sequence[chex.Array]:
@@ -128,8 +130,8 @@ class Proberenv(Environment):
             * jnp.sqrt(2)
         )
 
-        # leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)0)
-        leader = 0
+        # leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
+        leader = 3
 
         final_goal = jrandom.uniform(
             key, minval=jnp.array([650, 50]), maxval=jnp.array([700, 125]), shape=(2,)
@@ -315,7 +317,7 @@ class Proberenv(Environment):
                     draw_list.add_circle_filled(
                         P[f, 0, i, 0],
                         P[f, 0, i, 1],
-                        100,
+                        75,
                         imgui.get_color_u32_rgba(0, 1, 0, 0.2),
                     )
                 else:

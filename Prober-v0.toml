@@ -1,7 +1,7 @@
 [environment]
     [environment.settings]
         seed = 44234
-        n_env = 32
+        n_env = 256
         dt = 0.05
         record = false
 
@@ -30,13 +30,14 @@
         high = 800
 [ppo]
     # General parameters
-    num_train_steps = 10_000_000
+    num_train_steps = 1_000_000
     evaluate_every_epochs = 10_000
-    render_every_epochs = 30_000
+    checkpoint_every_epochs = 60_000
+    render_every_epochs = 60_000
     num_test_rollouts = 164
 
     # PPO parameters for learning
-    num_train_envs = 32  # "Number of environments for training"
+    num_train_envs = 256  # "Number of environments for training"
     discount = 0.99 # "Discount factor for rewards"
     gae_lambda = 0.95 # "Lambda for Generalized Advantage Estimation"
     n_steps = 512 # "Number of steps per environment per update"

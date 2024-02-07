@@ -5,7 +5,7 @@ import pax.core.environment as environment
 import pax.training as training
 from pax.utils.read_toml import read_config
 from typing import Dict, Tuple
-from pax.environments import Proberenv, Targetenv
+from pax.environments import Prober, Target
 
 
 __version__ = "0.2.0"
@@ -19,10 +19,13 @@ def make(env_name: str, train: bool = False) -> environment.Environment:
     train_config = cfg["ppo"]
 
     if env_name == "Target-v0":
-        env = Targetenv(config)
+        env = Target(config)
 
     elif env_name == "Prober-v0":
-        env = Proberenv(config)
+        env = Prober(config)
+        
+    # print(f"Initialized {env.name} environment")
+    # print(env)
 
     if train:
         return env, config, train_config

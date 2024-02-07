@@ -1,4 +1,5 @@
 import jax
+import json
 import chex
 import optax
 import numpy as np
@@ -15,12 +16,19 @@ from tqdm import tqdm
 from typing import Tuple
 from jax.debug import print as dprint, breakpoint as brk
 from tensorflow_probability.substrates import jax as tfp
+import plotly.express as px
 
 
 class Trainer:
     def __init__(self, env):
         self.env = env
         self.map_action = jit(vmap(env.action_space.map_action, in_axes=0))
+        
+    def save(self, filename, hyperparams, model):
+        with open(filename, "wb") as f:
+            hyperparam_str = json.dumps(hyperparams)
+            f.write((hyperparam_str + "\n").encode())
+            eqx.tree_serialise_leaves(f, model)
 
     def __call__(self, model, key, train_config):
         @eqx.filter_jit
@@ -96,8 +104,8 @@ class Trainer:
         log_steps, log_return = [], []
         T = tqdm(
             range(1, num_total_epochs + 1),
-            colour="#FFA500",
-            desc="PPO",
+            colour="#950dFF",
+            desc="PAX",
             leave=True,
         )
         best_reward = 0
@@ -135,10 +143,19 @@ class Trainer:
                 log_return.append(rewards)
                 T.set_description(f"Rewards: {rewards}")
                 T.refresh()
+                
+                if (step + 1) % train_config["checkpoint_every_epochs"] == 0:
+                    print(f"Saving model at {total_steps} steps")
+                    self.save(f"ppo_agent_{total_steps}.eqx", {}, train_state.model)
 
-                # print(reward)
                 if (step + 1) % train_config["render_every_epochs"] == 0:
-                    print(f"Rendering Performance")
+                    df = train_state.model.actor.layers[0].weight.T@train_state.model.actor.layers[0].weight
+                    df2 = train_state.model.critic.layers[0].weight.T@train_state.model.critic.layers[0].weight
+                    fig = px.imshow(df)
+                    # fig2 = px.imshow(df2)
+                    fig.show()
+                    # fig2.show()
+                    print(f"Rendering Performance after {total_steps} steps")
                     self.env.render(show_state, log_return)
 
                 # if mle_log is not None:

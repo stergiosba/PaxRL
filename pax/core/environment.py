@@ -59,11 +59,11 @@ class Environment(eqx.Module):
         return obs, state, reward, done
 
     @eqx.filter_jit
-    def reset(self, key):
+    def reset(self, key: chex.PRNGKey):
         """Resets the environment. This is to be used externally after implementing the reset_env function for a specific environment.
 
         Args:
-            key (_type_): A random key
+            key (chex.PRNGKey): A random key
 
         Returns:
             Calls the reset_env function for a specific environment.
@@ -90,11 +90,11 @@ class Environment(eqx.Module):
         """
         raise NotImplementedError
 
-    def reset_env(self, key):
+    def reset_env(self, key: chex.PRNGKey):
         """Resets a specific environment (To be implemented on a per-environment basis)
 
         Args:
-            key (_type_): A random key
+            key (chex.PRNGKey): A random key
 
         Raises:
             NotImplementedError: Not implemented
@@ -109,3 +109,12 @@ class Environment(eqx.Module):
             name (str): The name of the environment
         """
         return self.__class__.__name__
+    
+    @property
+    def version(self) -> str:
+        """Returns the version of the environment
+
+        Returns:
+            version (str): The version of the environment
+        """
+        return NotImplementedError

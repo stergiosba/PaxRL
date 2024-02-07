@@ -1,11 +1,7 @@
 import chex
-import jax.random as jrandom
 import equinox as eqx
-import jax.numpy as jnp
-import numpy as np
-from jax import jit
+import jax.numpy as jnp, jax.random as jrandom
 from typing import Callable, Optional, Tuple, Union, Sequence, Any, Dict
-from collections import OrderedDict
 
 
 class Space(eqx.Module):

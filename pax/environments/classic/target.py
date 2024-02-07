@@ -29,7 +29,7 @@ class EnvState(eqx.Module):
         return f"{__class__.__name__}: {str(self.__dict__)}"
 
 
-class Targetenv(Environment):
+class Target(Environment):
 
     """The main `Pax` class.
         It encapsulates an environment with arbitrary dynamics.
@@ -48,6 +48,10 @@ class Targetenv(Environment):
     action_space: SeparateGrid
     observation_space: Box
     params: EnvParams
+
+    @property
+    def version(self):
+        return "0.1"
 
     def __init__(self, params: Dict):
         """

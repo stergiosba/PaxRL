@@ -53,7 +53,7 @@ class QRLinear(eqx.nn.Linear):
     def __init__(self, input_dim: int, output_dim: int, gain: float, key: chex.PRNGKey):
         super().__init__(input_dim, output_dim, key=key)
         self.weight = orthogonal_init(self.weight, gain, key)
-        self.bias = 0.005 * jnp.ones_like(self.bias)
+        self.bias = 0.0 * jnp.ones_like(self.bias)
 
     # def __call__(self, x, *, key=None):
     #     # return super().__call__(x, key=key)
@@ -80,14 +80,14 @@ class Agent(eqx.Module):
             [
                 QRLinear(
                     jnp.array(obs_shape).prod(),
-                    128,
-                    jnp.sqrt(0.02),
+                    64,
+                    jnp.sqrt(0.2),
                     key=keys[0],
                 ),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(128, 64, jnp.sqrt(0.02), key=keys[1]),
+                QRLinear(64, 32, jnp.sqrt(0.2), key=keys[1]),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(64, 1, jnp.array([0.01]), key=keys[2]),
+                QRLinear(32, 1, jnp.array([1]), key=keys[2]),
             ]
         )
 
@@ -95,14 +95,14 @@ class Agent(eqx.Module):
             [
                 QRLinear(
                     jnp.array(obs_shape).prod(),
-                    128,
-                    jnp.sqrt(0.02),
+                    64,
+                    jnp.sqrt(1),
                     key=keys[3],
                 ),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(128, 64, jnp.sqrt(0.02), key=keys[4]),
+                QRLinear(64, 32, jnp.sqrt(1), key=keys[4]),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(64, self.action_space_size, jnp.array([0.01]), key=keys[5]),
+                QRLinear(32, self.action_space_size, jnp.array([0.01]), key=keys[5]),
             ]
         )
 
