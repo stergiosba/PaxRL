@@ -17,6 +17,7 @@ from typing import Tuple
 from jax.debug import print as dprint, breakpoint as brk
 from tensorflow_probability.substrates import jax as tfp
 import plotly.express as px
+from collections import deque
 
 
 class Trainer:
@@ -102,6 +103,7 @@ class Trainer:
 
         total_steps = 0
         log_steps, log_return = [], []
+        logg_return = deque(maxlen=num_total_epochs)
         T = tqdm(
             range(1, num_total_epochs + 1),
             colour="#950dFF",
@@ -141,6 +143,8 @@ class Trainer:
                 )
                 log_steps.append(total_steps)
                 log_return.append(rewards)
+                logg_return.append(rewards)
+                np.savetxt("data.csv", logg_return, delimiter=",\n", header="Reward")
                 T.set_description(f"Rewards: {rewards}")
                 T.refresh()
                 
@@ -170,6 +174,7 @@ class Trainer:
 
 @jit
 def flatten_dims(x):
+    
     return x.swapaxes(0, 1).reshape(x.shape[0] * x.shape[1], *x.shape[2:])
 
 

@@ -1,9 +1,10 @@
 import chex
 import equinox as eqx
 import jax.random as jrandom
-from typing import Dict
+import jax.numpy as jnp
+from typing import Dict, Tuple, Callable
 from jax import lax, tree_util as jtu
-from pax.core.spaces import *
+from pax.core.spaces import Space
 from pax.core.state import EnvState
 from jax.debug import print as dprint
 
@@ -15,11 +16,45 @@ class EnvParams(eqx.Module):
     observation_space: Dict
 
 
+class EnvRewards(eqx.Module):
+    """The environment rewards.
+
+    `Args`:
+        - `r_max_interaction (Callable)`: The reward for the maximum interaction.
+        - `r_leader (Callable)`: The reward for the leader.
+        - `r_target (Callable)`: The reward for the target.
+        - `r_angle (Callable)`: The reward for the angle.
+    """
+
+    func: Dict[str, Callable]
+    scales: Dict[str, float]
+    
+    def __init__(self):
+        self.func = {}
+        self.scales = {}
+
+    def register(self, reward_func: Callable, scale: float = 1.0):
+        self.func[reward_func.__name__] = reward_func
+        self.scales[reward_func.__name__] = scale
+
+    def apply(self, state: EnvState, action: chex.ArrayDevice):
+        r = [self.func[name](state, action)*self.scales[name] for name in self.func.keys()]
+        return jnp.array(r)
+
+    def __repr__(self):
+        return f"{__class__.__name__}: {str(self.__dict__)}"
+
+
 class Environment(eqx.Module):
     """The main `Pax` class.
     It encapsulates an environment with arbitrary dynamics. It is a subclass of `equinox.Module` making it jittable.
     An environment can be partially or fully observable.
     """
+    
+    params: EnvParams
+    action_space: Space
+    observation_space: Space
+    rewards: EnvRewards
 
     @eqx.filter_jit
     def step(
@@ -50,7 +85,7 @@ class Environment(eqx.Module):
 
         # Automatic reset
         obs_reset, state_reset = self.reset_env(key_reset)
-
+        # TODO: Figure out why done needs to be indexed at 0
         state = jtu.tree_map(
             lambda x, y: lax.select(done[0], x, y), state_reset, state_step
         )
@@ -75,7 +110,7 @@ class Environment(eqx.Module):
         key: chex.PRNGKey,
         state: EnvState,
         action: chex.ArrayDevice,
-        extra_in: chex.ArrayDevice=None,
+        extra_in: chex.ArrayDevice = None,
     ):
         """Steps a specific environment (To be implemented on a per-environment basis)
 
@@ -109,7 +144,7 @@ class Environment(eqx.Module):
             name (str): The name of the environment
         """
         return self.__class__.__name__
-    
+
     @property
     def version(self) -> str:
         """Returns the version of the environment

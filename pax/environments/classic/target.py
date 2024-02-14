@@ -6,7 +6,7 @@ import jax.numpy.linalg as la
 from jax.debug import print as dprint  # type: ignore
 from pax.core.environment import Environment, EnvParams
 from pax.core.spaces import *
-from typing import Sequence, Tuple
+from typing import Sequence, Tuple, Dict
 from jax import lax, jit
 
 
@@ -47,7 +47,6 @@ class Target(Environment):
     n_agents: int
     action_space: SeparateGrid
     observation_space: Box
-    params: EnvParams
 
     @property
     def version(self):

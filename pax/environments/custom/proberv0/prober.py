@@ -4,10 +4,20 @@ import numpy as np
 import jax.numpy.linalg as la
 from jax import lax, jit, nn as jnn, numpy as jnp, random as jrandom
 from pax.utils.bezier import BezierCurve3
-from pax.core.environment import Environment, EnvParams
+from pax.core.environment import Environment, EnvParams, EnvRewards
 from pax.core.spaces import SeparateGrid, Box
-from typing import Any, Dict, Sequence, Tuple, Union
+from typing import Any, Dict, Sequence, Tuple, Union, Callable
 from jax.debug import print as dprint  # type: ignore
+
+
+@jit
+def r_acceleration(state, action):
+    return la.norm(action[-1]) ** 2
+
+
+@jit
+def r_leader2(state, action):
+    return la.norm(state.X[-1] - state.X[state.leader]) < 75
 
 
 class EnvState(eqx.Module):
@@ -34,17 +44,15 @@ class EnvState(eqx.Module):
 
 
 class Prober(Environment):
-
     """The main `Prober` environment class.
         Reynolds swarm dynamics with probing interactions.
-        An environment can be partially or fully observable.
+        The environment can be partially or fully observable.
 
     `Attributes`:
         - `n_agents (int)`: The total number of agents (actors) in the environment.
         - `n_scripted (int)`: The total number of scripted entities in the environment.
         - `action_space (Union[Discrete, Box])`: The action space allowed to the agents.
         - `observation_space (Union[Discrete, Box])`: The observation space of the environment.
-        - `params (Dict)`: Parameters given to environment from the TOML file.
 
     """
 
@@ -52,8 +60,7 @@ class Prober(Environment):
     n_scripted: int
     action_space: SeparateGrid
     observation_space: Box
-    params: EnvParams
-    
+
     @property
     def version(self):
         return "0.1"
@@ -75,6 +82,10 @@ class Prober(Environment):
         o_low, o_high = self.params.observation_space.values()
         o_shape = (self.n_agents + self.n_scripted, 2)
         self.observation_space = Box(o_low, o_high, o_shape, o_dtype)
+
+        self.rewards = EnvRewards()
+        self.rewards.register(r_leader2, 1.25)
+        # self.rewards.register(r_acceleration, -0.000005)
 
     @eqx.filter_jit
     def get_obs(self, state: EnvState) -> Sequence[chex.Array]:
@@ -103,8 +114,8 @@ class Prober(Environment):
 
         init_X_scripted = jrandom.uniform(
             key,
-            minval=jnp.array([75, 75]),
-            maxval=jnp.array([125, 125]),
+            minval=jnp.array([100, 600]),
+            maxval=jnp.array([125, 725]),
             shape=(self.n_scripted, 2),
         )
 
@@ -119,8 +130,8 @@ class Prober(Environment):
         # )
         init_X_agents = jrandom.uniform(
             key,
-            minval=jnp.array([400, 400]),
-            maxval=jnp.array([500, 500]),
+            minval=jnp.array([475, 475]),
+            maxval=jnp.array([525, 525]),
             shape=(self.n_agents, 2),
         )
 
@@ -190,10 +201,6 @@ class Prober(Environment):
             return -la.norm(state.X[-1] - X[state.leader]) / (800 * jnp.sqrt(2))
 
         @jit
-        def r_leader2(state):
-            return la.norm(state.X[-1] - X[state.leader])
-
-        @jit
         def r_target(state):
             return -la.norm(state.curve.eval(1.0) - state.X[-1]) / (800 * jnp.sqrt(2))
 
@@ -210,7 +217,6 @@ class Prober(Environment):
 
         acc = action
         new_B = extra_in[0]
-        # dprint("{x}",x=new_B)
         dt = self.params.settings["dt"]
         X_dot_prev = state.X_dot
         X_dot = state.X_dot + dt / 6 * acc  # - 0.01*state.X_dot
@@ -225,20 +231,9 @@ class Prober(Environment):
         state = EnvState(X, X_prev, X_dot, X_dot_prev, new_B, state.leader, state.curve, state.time + 1)  # type: ignore
 
         obs = self.get_obs(state)
-        # dprint("{x}", x = r_max_interaction(state.B, state.leader))
-        # reward = 0.1 * r_max_interaction(state.B, state.leader)# + 0.1*r_angle(X_dot_prev, X_dot)
-        # reward = 1.0*(r_leader2(state)<100)
-        # reward = 1.0*r_max_interaction(new_B, state.leader)
-        #
-        # reward = 1.0*r_leader(state)
-        # reward = r_angle(state.X_dot_prev, state.X_dot)
 
-        reward = (
-            1.0 * (r_leader2(state) < 75)
-            + 0.0 * r_max_interaction(new_B, state.leader)
-            + 0.0 * r_target(state)
-        )
-        # reward = jnp.clip(reward, a_min=-1, a_max=1)
+        reward = self.rewards.apply(state, action).sum()
+        # reward = jnp.clip(reward, a_min=-4, a_max=4)
         done = self.is_terminal(state)
 
         return (obs, state, jnp.array([reward]), done)
@@ -252,12 +247,12 @@ class Prober(Environment):
         done_2 = state.time == self.params.scenario["episode_size"]
 
         done_3 = lax.select(
-            jnp.any(state.X[-1] <= self.observation_space.low),
+            jnp.any(state.X <= self.observation_space.low),
             jnp.array([1.0]),
             jnp.array([0.0]),
         )
         done_4 = lax.select(
-            jnp.any(state.X[-1] >= self.observation_space.high),
+            jnp.any(state.X >= self.observation_space.high),
             jnp.array([1.0]),
             jnp.array([0.0]),
         )
@@ -368,13 +363,28 @@ class Prober(Environment):
             if isinstance(P, chex.Array):
                 P = np.array(P)
 
+            if len(P.shape) == 3:
+                P = P[None, :]
+
+            if len(P.shape) == 2:
+                P = P[None, None, :]
+
             L = state.leader
             if isinstance(L, chex.Array):
                 L = np.array(L)
 
+            if len(L.shape) == 0:
+                L = L.reshape(1, 1)
+
             G = state.curve.eval(1.0)
             if isinstance(G, chex.Array):
                 G = np.array(G)
+
+            if len(G.shape) == 2:
+                G = G[None, :]
+
+            if len(G.shape) == 1:
+                G = G[None, None, :]
 
             while not glfw.window_should_close(window):
                 glfw.poll_events()
@@ -406,13 +416,13 @@ class Prober(Environment):
 
                 if x:
                     auto_start = True
-                    
+
                 imgui.set_next_window_size(200, 200)
                 imgui.set_next_window_position(800, 200)
                 imgui.plot_lines(
                     "Returns",
                     np.array(log_returns),
-                    overlay_text="SIN() over time",
+                    overlay_text="Rewards",
                     # offset by one item every milisecond, plot values
                     # buffer its end wraps around
                     # values_offset=int(time() * 100) % L[-1],

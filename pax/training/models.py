@@ -80,14 +80,14 @@ class Agent(eqx.Module):
             [
                 QRLinear(
                     jnp.array(obs_shape).prod(),
-                    64,
-                    jnp.sqrt(0.2),
+                    128,
+                    jnp.sqrt(1),
                     key=keys[0],
                 ),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(64, 32, jnp.sqrt(0.2), key=keys[1]),
+                QRLinear(128, 64, jnp.sqrt(1), key=keys[1]),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(32, 1, jnp.array([1]), key=keys[2]),
+                QRLinear(64, 1, jnp.array([1]), key=keys[2]),
             ]
         )
 
@@ -95,14 +95,14 @@ class Agent(eqx.Module):
             [
                 QRLinear(
                     jnp.array(obs_shape).prod(),
-                    64,
+                    128,
                     jnp.sqrt(1),
                     key=keys[3],
                 ),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(64, 32, jnp.sqrt(1), key=keys[4]),
+                QRLinear(128, 64, jnp.sqrt(1), key=keys[4]),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(32, self.action_space_size, jnp.array([0.01]), key=keys[5]),
+                QRLinear(64, self.action_space_size, jnp.array([0.01]), key=keys[5]),
             ]
         )
 

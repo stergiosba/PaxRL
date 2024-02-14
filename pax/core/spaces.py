@@ -1,7 +1,7 @@
 import chex
 import equinox as eqx
 import jax.numpy as jnp, jax.random as jrandom
-from typing import Callable, Optional, Tuple, Union, Sequence, Any, Dict
+from typing import Tuple, Union, Sequence
 
 
 class Space(eqx.Module):
