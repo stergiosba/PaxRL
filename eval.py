@@ -23,7 +23,7 @@ def load(filename, model):
         return eqx.tree_deserialise_leaves(f, model)
     
     
-def use_model(model, obs, key, action_mapping=True):
+def use_model(model, env, obs, key, action_mapping=True):
     value, split_logits = model(obs)
     multi_pi = tfp.distributions.Categorical(logits=split_logits)
     action = multi_pi.sample(seed=key)
@@ -37,23 +37,26 @@ def use_model(model, obs, key, action_mapping=True):
 key = jr.PRNGKey(0)
 
 env, model = make_model("Prober-v0", key)
+agent = load("ppo_agent_9.eqx", model)
 obs, state = env.reset(key)
 obs = np.array(obs)
 
-zero_action = jnp.zeros([env.params.scenario["n_scripted_entities"],2])
+n = env.params.scenario["n_scripted_entities"]
+zero_action = np.concatenate([[20*np.ones(n)],[np.zeros(n)]]).transpose()
+
 
 O = []
-
 while True:
-    value, action = use_model(model, obs, key)
-    total_action = jnp.concatenate([zero_action, action], axis=0)
-    obs, state, reward, done = env.step(key, state, total_action, jnp.empty([1,env.params.scenario["n_scripted_entities"]]))
+    value, action = use_model(agent, env, obs, key)
+    total_action = np.concatenate([zero_action, action], axis=0)
+    obs, state, reward, done = env.step(key, state, total_action, np.empty([1,n]))
     obs = np.array(obs)
     key,_ = jr.split(key)
     O.append(obs)
     if done:
         obs, state = env.reset(key)
         break
+
 
 O = np.array(O)
 numframes = O.shape[0]
@@ -70,7 +73,7 @@ def matplotlib_render(obs, numframes=1000, record=False):
     x_data = obs[0, :, 0]
     y_data = obs[0, :, 1]
     
-    scatter = ax.scatter(x_data, y_data)  # Initial scatter plot
+    scatter = ax.scatter(x_data, y_data, s=80)  # Initial scatter plot
 
     # Define the update function for the animation
     def update(frame):

@@ -76,7 +76,7 @@ class RolloutManager(object):
             action_unmapped, _, _, key_net = self.select_action(
                 train_state.model, obs, key_net
             )
-
+            # dprint("{x}", x=num_envs)
             action_agent = self.map_action(action_unmapped)
             action, extra_out = scripted_act(state, self.env.params)
             action = action.at[:, -1].set(action_agent)

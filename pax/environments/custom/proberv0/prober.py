@@ -370,7 +370,7 @@ class Prober(Environment):
                 P = P[None, None, :]
 
             L = state.leader
-            if isinstance(L, chex.Array):
+            if isinstance(L, chex.Array) or isinstance(L, int):
                 L = np.array(L)
 
             if len(L.shape) == 0:
