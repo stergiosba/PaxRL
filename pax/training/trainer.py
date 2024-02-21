@@ -98,26 +98,26 @@ class Trainer:
         # Run the initialization step of the environments at this point
         # the observation has shape (n_env, n_agents, 2)
         obs, state = rollout_manager.batch_reset(
-            rng_reset, self.env.params.settings["n_env"]
+            rng_reset, train_config["num_train_envs"]
         )
-
+ 
         total_steps = 0
         log_steps, log_return = [], []
         logg_return = deque(maxlen=num_total_epochs)
         T = tqdm(
             range(1, num_total_epochs + 1),
             colour="#950dFF",
-            desc="PAX",
+            desc="PaxRL",
             leave=True,
         )
-        best_reward = 0
+
         for step in T:
             # Get a transition
             train_state, obs, state, batch, rng_step = get_transition(
                 train_state, obs, state, batch, rng_step
             )
             # Increment the step counter
-            total_steps += self.env.params.settings["n_env"]
+            total_steps += train_config["num_train_envs"]
 
             if step % (train_config["n_steps"] + 1) == 0:
                 metric_dict, train_state, rng_update = update(
@@ -196,11 +196,11 @@ def loss_actor_and_critic(
     # pi = tfp.distributions.Categorical(logits=logits)
     multi_pi = tfp.distributions.Categorical(logits=split_logits)
     value_pred = value_pred[:, 0]
-    # TODO: Figure out why training without 0 breaks categorical model
-    # And why with 0 breaks gaussian model pi (gymnax comment)
+    # TODO: (FROM GYMNAX) Figure out why training without 0 breaks categorical model
+    # And why with 0 breaks gaussian model pi
     # log_prob = pi.log_prob(action[..., -1])
 
-    # Calulate the actor loss
+    # Calculate the actor loss
     log_prob = multi_pi.log_prob(action.T).sum(axis=1)
     ratio = jnp.exp(log_prob - log_pi_old)
     gae_mean = gae.mean()
@@ -327,8 +327,7 @@ def update_epoch(
             critic_coeff=critic_coeff,
             entropy_coeff=entropy_coeff,
         )
-        # dprint("{x}", x=grads.actor.layers[2].weight)
-        # brk()
+
         train_state = train_state.apply_gradients(grads)
 
     return train_state, total_loss

@@ -41,7 +41,7 @@ obs = np.array(obs)
 
 # agent_1 = load("ppo_agent_1.eqx", model)
 # agent_2 = load("ppo_agent_4.eqx", model)
-agent = load("ppo_agent_9.eqx", model)
+agent = load("ppo_agent_fixed_withprev.eqx", model)
 
 
 # action = env.action_space.sample(key)
@@ -51,8 +51,6 @@ x_range = np.linspace(0, 800, 20)
 y_range = np.linspace(0, 800, 20)
 
 V = np.zeros([len(x_range), len(y_range)])
-A_x = np.zeros([len(x_range), len(y_range)])
-A_y = np.zeros([len(x_range), len(y_range)])
 
 for i,x in enumerate(x_range):
     O = obs
@@ -62,8 +60,6 @@ for i,x in enumerate(x_range):
         value, action = use_model(agent, O, key)
 
         V[j,i] = value[0]
-        A_x[j,i] = action[0,0]
-        A_y[j,i] = action[0,1]
         
 
 
@@ -80,13 +76,13 @@ img = px.imshow(V, x=x_range, y=y_range)
 img.update_layout(title="Critic Network Evaluation", xaxis_title="X", yaxis_title="Y")
 img.show()
 
-img = px.imshow(A_x, x=x_range, y=y_range)
-img.update_layout(title="Critic Network Evaluation", xaxis_title="X", yaxis_title="Y")
-img.show()
+# img = px.imshow(A_x, x=x_range, y=y_range)
+# img.update_layout(title="Critic Network Evaluation", xaxis_title="X", yaxis_title="Y")
+# img.show()
 
-img = px.imshow(A_y, x=x_range, y=y_range)
-img.update_layout(title="Critic Network Evaluation", xaxis_title="X", yaxis_title="Y")
-img.show()
+# img = px.imshow(A_y, x=x_range, y=y_range)
+# img.update_layout(title="Critic Network Evaluation", xaxis_title="X", yaxis_title="Y")
+# img.show()
 
 
 zero_action = jnp.zeros([env.params.scenario["n_scripted_entities"],2])

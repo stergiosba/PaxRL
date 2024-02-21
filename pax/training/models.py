@@ -55,9 +55,6 @@ class QRLinear(eqx.nn.Linear):
         self.weight = orthogonal_init(self.weight, gain, key)
         self.bias = 0.0 * jnp.ones_like(self.bias)
 
-    # def __call__(self, x, *, key=None):
-    #     # return super().__call__(x, key=key)
-    #     return self.weight @ x + self.bias
 
 
 class Agent(eqx.Module):
@@ -71,9 +68,8 @@ class Agent(eqx.Module):
         # TODO: Refactor this agent to be more general.
 
         obs_shape = env.observation_space.shape
-        # obs_shape = 2
         self.action_space_size = env.action_space.size
-        # print(env.action_space)
+
         keys = jrandom.split(key, 6)
 
         self.critic = eqx.nn.Sequential(

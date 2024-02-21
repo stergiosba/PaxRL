@@ -11,12 +11,40 @@ from jax.debug import print as dprint  # type: ignore
 
 
 @jit
+def r_max_interaction(B, leader):
+    P = jnn.softmax(B)
+    return len(B) * P[leader] - 1
+
+
+@jit
+def r_leader(state):
+    return -la.norm(state.X[-1] - X[state.leader]) / (800 * jnp.sqrt(2))
+
+
+@jit
+def r_target(state):
+    return -la.norm(state.curve.eval(1.0) - state.X[-1]) / (800 * jnp.sqrt(2))
+
+
+@jit
+def r_angle(X_dot_prev, X_dot):
+    # calculate the angle of the velocity before and after the step
+    diff = jnp.abs(X_dot - X_dot_prev)
+    angle_prev = jnp.arctan2(diff[:, 0], diff[:, 1])
+    # angle = jnp.arctan2(X_dot[1], X_dot[0])
+    # calculate the difference of the angles
+    # angle_diff = jnp.abs(angle_prev - angle)
+    # calculate the reward based on the difference of the angles
+    return jnp.sum(angle_prev)
+
+
+@jit
 def r_acceleration(state, action):
     return la.norm(action[-1]) ** 2
 
 
 @jit
-def r_leader2(state, action):
+def r_leader_simple(state, action):
     return la.norm(state.X[-1] - state.X[state.leader]) < 75
 
 
@@ -31,9 +59,7 @@ class EnvState(eqx.Module):
     """
 
     X: chex.ArrayDevice
-    X_prev: chex.ArrayDevice
     X_dot: chex.ArrayDevice
-    X_dot_prev: chex.ArrayDevice
     B: chex.ArrayDevice
     leader: chex.ArrayDevice
     curve: BezierCurve3
@@ -78,17 +104,27 @@ class Prober(Environment):
         self.action_space = SeparateGrid(action_range)
         # self.action_space = Grid(action_range)
 
-        o_dtype = jnp.float32
-        o_low, o_high = self.params.observation_space.values()
-        o_shape = (self.n_agents + self.n_scripted, 2)
-        self.observation_space = Box(o_low, o_high, o_shape, o_dtype)
+        obs_dtype = jnp.float32
+        obs_lower, obs_upper = self.params.observation_space["limits"]
+
+        if self.params.observation_space["use_previous_state"]:
+            obs_shape = (2 * (self.n_agents + self.n_scripted), 2)
+        else:
+            obs_shape = (self.n_agents + self.n_scripted, 2)
+
+        self.observation_space = Box(obs_lower, obs_upper, obs_shape, obs_dtype)
 
         self.rewards = EnvRewards()
-        self.rewards.register(r_leader2, 1.25)
+        self.rewards.register(r_leader_simple, 1.0)
         # self.rewards.register(r_acceleration, -0.000005)
 
     @eqx.filter_jit
-    def get_obs(self, state: EnvState) -> Sequence[chex.Array]:
+    def get_obs(
+        self,
+        prev_state: EnvState,
+        action: chex.ArrayDevice = None,
+        new_state: EnvState = None,
+    ) -> Sequence[chex.ArrayDevice]:
         """Applies observation function to state.
 
         `Args`:
@@ -98,10 +134,13 @@ class Prober(Environment):
             - `observation (chex.Array)`: The observable part of the state.
         """
 
-        return jnp.array(state.X).reshape(-1)
+        # return jnp.array(new_state.X).flatten()
+        return jnp.vstack([prev_state.X, new_state.X]).flatten()
 
     @eqx.filter_jit
-    def reset_env(self, key: chex.PRNGKey) -> Tuple[Sequence[chex.Array], EnvState]:
+    def reset_env(
+        self, key: chex.PRNGKey
+    ) -> Tuple[Sequence[chex.ArrayDevice], EnvState]:
         """Resets the environment.
 
         Args:
@@ -162,17 +201,15 @@ class Prober(Environment):
 
         leader_path_curve = BezierCurve3(P)
 
-        state = EnvState(
+        init_state = EnvState(
             X=jnp.concatenate([init_X_scripted, init_X_agents]),
-            X_prev=jnp.concatenate([init_X_scripted, init_X_agents]),
             X_dot=jnp.concatenate([init_X_dot_scripted, init_X_dot_agents]),
-            X_dot_prev=jnp.concatenate([init_X_dot_scripted, init_X_dot_agents]),
             B=jnp.zeros(shape=self.n_scripted),
             leader=leader,
             curve=leader_path_curve,
             time=0,
         )
-        return (self.get_obs(state), state)  # type: ignore
+        return (self.get_obs(init_state, None, init_state), init_state)  # type: ignore
 
     @eqx.filter_jit
     def step_env(
@@ -190,53 +227,34 @@ class Prober(Environment):
         Returns:
             - `environment_step Tuple[Sequence[chex.Array], EnvState, chex.Array, chex.Array])`: A step in the environment.
         """
+        # Saving the previous state.
+        prev_state = state
 
-        @jit
-        def r_max_interaction(B, leader):
-            P = jnn.softmax(B)
-            return len(B) * P[leader] - 1
-
-        @jit
-        def r_leader(state):
-            return -la.norm(state.X[-1] - X[state.leader]) / (800 * jnp.sqrt(2))
-
-        @jit
-        def r_target(state):
-            return -la.norm(state.curve.eval(1.0) - state.X[-1]) / (800 * jnp.sqrt(2))
-
-        @jit
-        def r_angle(X_dot_prev, X_dot):
-            # calculate the angle of the velocity before and after the step
-            diff = jnp.abs(X_dot - X_dot_prev)
-            angle_prev = jnp.arctan2(diff[:, 0], diff[:, 1])
-            # angle = jnp.arctan2(X_dot[1], X_dot[0])
-            # calculate the difference of the angles
-            # angle_diff = jnp.abs(angle_prev - angle)
-            # calculate the reward based on the difference of the angles
-            return jnp.sum(angle_prev)
-
+        # Taking in the new action.
         acc = action
         new_B = extra_in[0]
         dt = self.params.settings["dt"]
-        X_dot_prev = state.X_dot
-        X_dot = state.X_dot + dt / 6 * acc  # - 0.01*state.X_dot
+        # Applying the action to the state and getting the new state. Clipping the velocity to a maximum of 10 * sqrt(2) per axis.
+        X_dot = jnp.clip(
+            state.X_dot + dt / 6 * acc, a_min=-10 * jnp.sqrt(2), a_max=10 * jnp.sqrt(2)
+        )
 
-        X_dot = jnp.clip(X_dot, a_min=-10 * jnp.sqrt(2), a_max=10 * jnp.sqrt(2))
-        X_prev = state.X
         X = state.X + dt * X_dot
         X = jnp.clip(
             X, a_min=self.observation_space.low, a_max=self.observation_space.high
         )
 
-        state = EnvState(X, X_prev, X_dot, X_dot_prev, new_B, state.leader, state.curve, state.time + 1)  # type: ignore
+        new_state = EnvState(X, X_dot, new_B, state.leader, state.curve, state.time + 1)  # type: ignore
 
-        obs = self.get_obs(state)
+        # Using the transition from the previous state (s) to the new state (s') using action (a).
+        # s, a -> s' : And then obtaining the observations and rewards.
+        obs = self.get_obs(prev_state, action, new_state)
 
-        reward = self.rewards.apply(state, action).sum()
+        reward = self.rewards.total(prev_state, action, new_state)
         # reward = jnp.clip(reward, a_min=-4, a_max=4)
-        done = self.is_terminal(state)
+        done = self.is_terminal(new_state)
 
-        return (obs, state, jnp.array([reward]), done)
+        return (obs, new_state, jnp.array([reward]), done)
 
     def is_terminal(self, state):
         # The state.curve(1.0) is the final goal

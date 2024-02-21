@@ -18,16 +18,17 @@
         w_a = 0.7
         w_s = 1.0
         Kp_l = 5.0
-        Kp_p = 0.0
 
     [environment.action_space]
-        low = -250
-        high = 250
+        lower = -250
+        upper = 250
         step = 50
 
     [environment.observation_space]
-        low = 0
-        high = 800
+        limits = [0, 800]
+        lower = 0
+        upper = 800
+        use_previous_state = true
 
     # [environment.rewards]
     #     reward_collision = -1.0

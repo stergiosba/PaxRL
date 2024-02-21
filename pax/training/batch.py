@@ -20,8 +20,7 @@ class BatchManager(object):
         self.gae_lambda = train_config["gae_lambda"]
         self.action_space = action_space
         self.buffer_size = self.num_envs * self.n_steps
-        self.state_shape = state_shape
-        # self.state_shape = 2
+        self.state_shape = 1*state_shape
 
         self.reset()
 

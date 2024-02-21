@@ -9,7 +9,7 @@ from pax.training.models import Agent
 from pax import make
 
 def prober_test(env_name="Prober-v0"):
-    env, _, train_config = make(env_name, train=True)
+    env, train_config = make(env_name, train=True)
 
     key_input = jrandom.PRNGKey(env.params.settings["seed"])
     key, key_model = jrandom.split(key_input)
@@ -36,7 +36,7 @@ def prober_test(env_name="Prober-v0"):
 
 
 def target_test(env_name="Target-v0"):
-    env,_, train_config = make(env_name, train=True)
+    env, train_config = make(env_name, train=True)
 
     key_input = jrandom.PRNGKey(env.params.settings["seed"])
     key, key_model = jrandom.split(key_input)

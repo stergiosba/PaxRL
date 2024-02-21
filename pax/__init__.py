@@ -28,6 +28,6 @@ def make(env_name: str, train: bool = False) -> environment.Environment:
     # print(env)
 
     if train:
-        return env, config, train_config
+        return env, train_config
     else:
-        return env, config
+        return env

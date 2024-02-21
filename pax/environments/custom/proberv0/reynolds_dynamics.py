@@ -391,8 +391,8 @@ def scripted_act(
     u_leader = params.scenario["Kp_l"] * e_leader
     steer = steer.at[jnp.arange(n_env), leader].add(u_leader)
 
-    e_prob = swarm_leader() - X[jnp.arange(n_env), -1]
-    u_prob = params.scenario["Kp_p"] * e_prob
-    steer = steer.at[jnp.arange(n_env), -1].add(u_prob)
+    # e_prob = swarm_leader() - X[jnp.arange(n_env), -1]
+    # u_prob = params.scenario["Kp_p"] * e_prob
+    # steer = steer.at[jnp.arange(n_env), -1].add(u_prob)
 
     return steer, extra_out

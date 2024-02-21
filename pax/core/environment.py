@@ -17,7 +17,7 @@ class EnvParams(eqx.Module):
 
 
 class EnvRewards(eqx.Module):
-    """The environment rewards.
+    """The environment rewards. Essentially a set of dictionaries that can pass via jit.
 
     `Args`:
         - `r_max_interaction (Callable)`: The reward for the maximum interaction.
@@ -37,9 +37,12 @@ class EnvRewards(eqx.Module):
         self.func[reward_func.__name__] = reward_func
         self.scales[reward_func.__name__] = scale
 
-    def apply(self, state: EnvState, action: chex.ArrayDevice):
-        r = [self.func[name](state, action)*self.scales[name] for name in self.func.keys()]
-        return jnp.array(r)
+    def apply(self, prev_state: EnvState, action: chex.ArrayDevice, state: EnvState):
+        rew = [self.func[name](state, action)*self.scales[name] for name in self.func.keys()]
+        return jnp.array(rew)
+    
+    def total(self, prev_state: EnvState, action: chex.ArrayDevice, state: EnvState):
+        return self.apply(prev_state, action, state).sum()
 
     def __repr__(self):
         return f"{__class__.__name__}: {str(self.__dict__)}"

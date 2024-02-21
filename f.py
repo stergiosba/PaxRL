@@ -2,14 +2,14 @@ import jax.numpy as jnp
 from dash import Dash, html, dash_table, dcc, callback, Output, Input
 import dash_player as dp
 import plotly.express as px
+import numpy as np
 import pandas as pd
 from types import SimpleNamespace
 
 Cfg = SimpleNamespace()
 Cfg.template = "simple_white"
-Cfg.xaxis = {"showgrid": False}
-Cfg.yaxis = {"showgrid": False}
-Cfg.show_grid = False
+Cfg.xaxis = {"showgrid": True}
+Cfg.yaxis = {"showgrid": True}
 Cfg.markers = False
 Cfg.line_color = "RebeccaPurple"
 
@@ -24,7 +24,7 @@ app.layout = html.Div(
             loop=True,
             playing=True,
             width="33%",
-            height="33",
+            height="33%",
         ),
         dcc.Graph(figure={}, id="controls-and-graph"),
         dcc.Interval(id="interval-component", interval=0.1 * 1000, n_intervals=0),
@@ -44,6 +44,8 @@ def update_graph(col_chosen):
         template=Cfg.template,
         markers=Cfg.markers,
         color_discrete_map={"# Reward": Cfg.line_color},
+        width=400,
+        height=400,
     )
     fig.update_layout(
         showlegend=False,
@@ -54,3 +56,4 @@ def update_graph(col_chosen):
 
 
 app.run(debug=True)
+
