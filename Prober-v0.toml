@@ -28,7 +28,7 @@
         limits = [0, 800]
         lower = 0
         upper = 800
-        use_previous_state = true
+        use_previous_state = false
 
     # [environment.rewards]
     #     reward_collision = -1.0

@@ -3,6 +3,7 @@ import pax.core.action as action
 import pax.core.spaces as spaces
 import pax.core.environment as environment
 import pax.training as training
+import pax.wrappers as wrappers
 from pax.utils.read_toml import read_config
 from typing import Dict, Tuple
 from pax.environments import Prober, Target

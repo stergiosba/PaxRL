@@ -8,6 +8,7 @@ from pax.core.environment import Environment, EnvParams, EnvRewards
 from pax.core.spaces import SeparateGrid, Box
 from typing import Any, Dict, Sequence, Tuple, Union, Callable
 from jax.debug import print as dprint  # type: ignore
+from .reynolds_dynamics import scripted_act
 
 
 @jit
@@ -54,13 +55,14 @@ class EnvState(eqx.Module):
     `Args`:
         - `X (chex.Array)`: Position of every Agents.
         - `X_dot (chex.Array)`: Velocity of every Agent.
+        - `interactions (chex.Array)`: The interaction of every agent with the scripted entities.
         - `leader (int)`: The id of the leader agent.
         - `goal (chex.Array)`: The location of the goal.
     """
 
     X: chex.ArrayDevice
     X_dot: chex.ArrayDevice
-    B: chex.ArrayDevice
+    interactions: chex.ArrayDevice
     leader: chex.ArrayDevice
     curve: BezierCurve3
     time: int
@@ -134,8 +136,7 @@ class Prober(Environment):
             - `observation (chex.Array)`: The observable part of the state.
         """
 
-        # return jnp.array(new_state.X).flatten()
-        return jnp.vstack([prev_state.X, new_state.X]).flatten()
+        return new_state.X
 
     @eqx.filter_jit
     def reset_env(
@@ -204,7 +205,7 @@ class Prober(Environment):
         init_state = EnvState(
             X=jnp.concatenate([init_X_scripted, init_X_agents]),
             X_dot=jnp.concatenate([init_X_dot_scripted, init_X_dot_agents]),
-            B=jnp.zeros(shape=self.n_scripted),
+            interactions=jnp.zeros(shape=self.n_scripted),
             leader=leader,
             curve=leader_path_curve,
             time=0,
@@ -230,9 +231,11 @@ class Prober(Environment):
         # Saving the previous state.
         prev_state = state
 
+        # scripted_action = scripted_act(state, self.params)
+
         # Taking in the new action.
         acc = action
-        new_B = extra_in[0]
+        new_interactions = extra_in[0]
         dt = self.params.settings["dt"]
         # Applying the action to the state and getting the new state. Clipping the velocity to a maximum of 10 * sqrt(2) per axis.
         X_dot = jnp.clip(
@@ -244,14 +247,12 @@ class Prober(Environment):
             X, a_min=self.observation_space.low, a_max=self.observation_space.high
         )
 
-        new_state = EnvState(X, X_dot, new_B, state.leader, state.curve, state.time + 1)  # type: ignore
+        new_state = EnvState(X, X_dot, new_interactions, state.leader, state.curve, state.time + 1)  # type: ignore
 
         # Using the transition from the previous state (s) to the new state (s') using action (a).
         # s, a -> s' : And then obtaining the observations and rewards.
         obs = self.get_obs(prev_state, action, new_state)
-
         reward = self.rewards.total(prev_state, action, new_state)
-        # reward = jnp.clip(reward, a_min=-4, a_max=4)
         done = self.is_terminal(new_state)
 
         return (obs, new_state, jnp.array([reward]), done)

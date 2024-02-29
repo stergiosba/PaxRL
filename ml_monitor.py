@@ -11,13 +11,18 @@ Cfg.template = "simple_white"
 Cfg.xaxis = {"showgrid": True}
 Cfg.yaxis = {"showgrid": True}
 Cfg.markers = False
-Cfg.line_color = "RebeccaPurple"
+Cfg.line_color = "#4dd2ff"
 
 app = Dash(__name__)
 
-
+colors = {"background": "#111111", "text": "#7FDBFF"}
 app.layout = html.Div(
+    style={"backgroundColor": colors["background"]},
     children=[
+        html.H1(
+            children="Experiment Monitor",
+            style={"textAlign": "center", "color": colors["text"]},
+        ),
         dp.DashPlayer(
             url="static/video.webm",
             controls=True,
@@ -27,8 +32,8 @@ app.layout = html.Div(
             height="33%",
         ),
         dcc.Graph(figure={}, id="controls-and-graph"),
-        dcc.Interval(id="interval-component", interval=0.1 * 1000, n_intervals=0),
-    ]
+        dcc.Interval(id="interval-component", interval=1 * 1000, n_intervals=0),
+    ],
 )
 
 
@@ -38,6 +43,7 @@ app.layout = html.Div(
 )
 def update_graph(col_chosen):
     df = pd.read_csv("data.csv")
+
     fig = px.line(
         df,
         title="Reward",
@@ -47,7 +53,11 @@ def update_graph(col_chosen):
         width=400,
         height=400,
     )
+
     fig.update_layout(
+        plot_bgcolor=colors["background"],
+        paper_bgcolor=colors["background"],
+        font_color=colors["text"],
         showlegend=False,
         xaxis=Cfg.xaxis,
         yaxis=Cfg.yaxis,
@@ -56,4 +66,3 @@ def update_graph(col_chosen):
 
 
 app.run(debug=True)
-

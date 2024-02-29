@@ -291,13 +291,13 @@ def rk4_integration(dynamics_fun: Callable, state, params):
     dt = params.settings["dt"]
 
     s1, extra_out = dynamics_fun(
-        state.leader, state.X, state.X_dot, state.B, state.time[0], params
+        state.leader, state.X, state.X_dot, state.interactions, state.time[0], params
     )
     s2, extra_out = dynamics_fun(
         state.leader,
         state.X + 0.5 * dt * state.X_dot,
         state.X_dot + dt / 2 * s1,
-        state.B,
+        state.interactions,
         state.time[0],
         params,
     )
@@ -305,7 +305,7 @@ def rk4_integration(dynamics_fun: Callable, state, params):
         state.leader,
         state.X + 0.5 * dt * state.X_dot,
         state.X_dot + 0.5 * dt * s2,
-        state.B,
+        state.interactions,
         state.time[0],
         params,
     )
@@ -313,7 +313,7 @@ def rk4_integration(dynamics_fun: Callable, state, params):
         state.leader,
         state.X + dt * state.X_dot,
         state.X_dot + dt * s3,
-        state.B,
+        state.interactions,
         state.time[0],
         params,
     )
