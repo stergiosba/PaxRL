@@ -56,12 +56,12 @@ class QRLinear(eqx.nn.Linear):
         self.bias = 0.0 * jnp.ones_like(self.bias)
 
 
-
 class Agent(eqx.Module):
     """The agent class. This class contains the critic and actor networks."""
 
     critic: eqx.Module
-    actor: eqx.Module
+    actor_1: eqx.Module
+    # actor_2: eqx.Module
     action_space_size: chex.ArrayDevice
 
     def __init__(self, env: Environment, key: chex.PRNGKey):
@@ -76,29 +76,29 @@ class Agent(eqx.Module):
             [
                 QRLinear(
                     jnp.array(obs_shape).prod(),
-                    128,
+                    256,
                     jnp.sqrt(1),
                     key=keys[0],
                 ),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(128, 64, jnp.sqrt(1), key=keys[1]),
+                QRLinear(256, 128, jnp.sqrt(1), key=keys[1]),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(64, 1, jnp.array([1]), key=keys[2]),
+                QRLinear(128, 1, jnp.array([1]), key=keys[2]),
             ]
         )
 
-        self.actor = eqx.nn.Sequential(
+        self.actor_1 = eqx.nn.Sequential(
             [
                 QRLinear(
                     jnp.array(obs_shape).prod(),
-                    128,
+                    256,
                     jnp.sqrt(1),
                     key=keys[3],
                 ),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(128, 64, jnp.sqrt(1), key=keys[4]),
+                QRLinear(256, 128, jnp.sqrt(1), key=keys[4]),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(64, self.action_space_size, jnp.array([0.01]), key=keys[5]),
+                QRLinear(128, self.action_space_size, jnp.array([0.01]), key=keys[5]),
             ]
         )
 
@@ -115,8 +115,8 @@ class Agent(eqx.Module):
             _type_: _description_
         """
         value = self.critic(x)
-        logits = self.actor(x)
+        logits = self.actor_1(x) #* self.actor_2(x)
 
         split_logits = jnp.split(logits, [11])
 
-        return value, split_logits            
+        return value, split_logits

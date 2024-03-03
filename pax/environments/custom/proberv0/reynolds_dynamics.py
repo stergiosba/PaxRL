@@ -5,7 +5,7 @@ from typing import Tuple, Dict, Callable
 from jax.debug import print as dprint
 from pax.core.environment import EnvParams
 from functools import partial
-# from pax.environments.custom.proberv0 import EnvState
+from pax.core.state import EnvState
 
 @jit
 def reynolds_dynamics(leader, X, X_dot, B, time, params):
@@ -324,7 +324,7 @@ def rk4_integration(dynamics_fun: Callable, state, params):
 
 @jit
 def scripted_act(
-    state, params: EnvParams, *args
+    state: EnvState, params: EnvParams, *args
 ) -> Tuple[chex.ArrayDevice, int]:
     """Calculates the scripted action for the swarm members.
 

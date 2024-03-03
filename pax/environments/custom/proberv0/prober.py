@@ -2,14 +2,14 @@ import chex
 import equinox as eqx
 import numpy as np
 import jax.numpy.linalg as la
+from jax import jit, vmap
 from jax import lax, jit, nn as jnn, numpy as jnp, random as jrandom
 from pax.utils.bezier import BezierCurve3
 from pax.core.environment import Environment, EnvParams, EnvRewards
 from pax.core.spaces import SeparateGrid, Box
 from typing import Any, Dict, Sequence, Tuple, Union, Callable
-from jax.debug import print as dprint  # type: ignore
 from .reynolds_dynamics import scripted_act
-
+from jax.debug import print as dprint, breakpoint as brk
 
 @jit
 def r_max_interaction(B, leader):
@@ -18,8 +18,8 @@ def r_max_interaction(B, leader):
 
 
 @jit
-def r_leader(state):
-    return -la.norm(state.X[-1] - X[state.leader]) / (800 * jnp.sqrt(2))
+def r_leader(state, action):
+    return la.norm(state.X[-1] - state.X[state.leader]) / (800 * jnp.sqrt(2))
 
 
 @jit
@@ -41,12 +41,12 @@ def r_angle(X_dot_prev, X_dot):
 
 @jit
 def r_acceleration(state, action):
-    return la.norm(action[-1]) ** 2
+    return la.norm(action** 2)
 
 
 @jit
 def r_leader_simple(state, action):
-    return la.norm(state.X[-1] - state.X[state.leader]) < 75
+    return la.norm(state.X[-1] - state.X[state.leader]) < 25
 
 
 class EnvState(eqx.Module):
@@ -88,10 +88,11 @@ class Prober(Environment):
     n_scripted: int
     action_space: SeparateGrid
     observation_space: Box
+    map_action: Callable
 
     @property
     def version(self):
-        return "0.1"
+        return "0.3"
 
     def __init__(self, params: Dict):
         """
@@ -105,6 +106,7 @@ class Prober(Environment):
         action_range = self.params.action_space.values()
         self.action_space = SeparateGrid(action_range)
         # self.action_space = Grid(action_range)
+        self.map_action = self.action_space.map_action
 
         obs_dtype = jnp.float32
         obs_lower, obs_upper = self.params.observation_space["limits"]
@@ -117,7 +119,7 @@ class Prober(Environment):
         self.observation_space = Box(obs_lower, obs_upper, obs_shape, obs_dtype)
 
         self.rewards = EnvRewards()
-        self.rewards.register(r_leader_simple, 1.0)
+        self.rewards.register(r_leader, -1.0)
         # self.rewards.register(r_acceleration, -0.000005)
 
     @eqx.filter_jit
@@ -152,12 +154,9 @@ class Prober(Environment):
             - `State (EnvState)`: The initial full state of the environment. Used internally.
         """
 
-        init_X_scripted = jrandom.uniform(
-            key,
-            minval=jnp.array([100, 600]),
-            maxval=jnp.array([125, 725]),
-            shape=(self.n_scripted, 2),
-        )
+        x_swarm, y_swarm = jrandom.uniform(key, minval=jnp.array([50,50]),maxval=jnp.array([750,750]),shape=(2,))
+        th = jnp.arange(0, self.n_scripted)*2*jnp.pi/(self.n_scripted)
+        init_X_scripted = jnp.vstack([x_swarm+30*jnp.cos(th),y_swarm+30*jnp.sin(th)]).T
 
         # init_X_dot_scripted = 5 * jrandom.uniform(
         #     key, minval=-0, maxval=0, shape=(self.n_scripted, 2)
@@ -181,11 +180,11 @@ class Prober(Environment):
             * jnp.sqrt(2)
         )
 
-        # leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
-        leader = 3
+        leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
+        # leader = 3
 
         final_goal = jrandom.uniform(
-            key, minval=jnp.array([650, 50]), maxval=jnp.array([700, 125]), shape=(2,)
+            key, minval=jnp.array([100, 100]), maxval=jnp.array([700, 700]), shape=(2,)
         )
         init_leader = init_X_scripted[leader]
 
@@ -230,11 +229,15 @@ class Prober(Environment):
         """
         # Saving the previous state.
         prev_state = state
+        total_action = 10 * jnp.sqrt(2)*jnp.array([jnp.ones([self.n_agents+self.n_scripted,]),-jnp.ones([self.n_agents+self.n_scripted,])]).T
 
+        # brk()
+        action = self.map_action(action)
+        # action, extra_out = scripted_act(state, self.env.params)
+
+        total_action = total_action.at[-1, :].set(action)
         # scripted_action = scripted_act(state, self.params)
-
-        # Taking in the new action.
-        acc = action
+        acc = total_action
         new_interactions = extra_in[0]
         dt = self.params.settings["dt"]
         # Applying the action to the state and getting the new state. Clipping the velocity to a maximum of 10 * sqrt(2) per axis.
@@ -266,12 +269,12 @@ class Prober(Environment):
         done_2 = state.time == self.params.scenario["episode_size"]
 
         done_3 = lax.select(
-            jnp.any(state.X <= self.observation_space.low),
+            jnp.any(state.X[-1] <= self.observation_space.low),
             jnp.array([1.0]),
             jnp.array([0.0]),
         )
         done_4 = lax.select(
-            jnp.any(state.X >= self.observation_space.high),
+            jnp.any(state.X[-1] >= self.observation_space.high),
             jnp.array([1.0]),
             jnp.array([0.0]),
         )
@@ -331,7 +334,7 @@ class Prober(Environment):
                     draw_list.add_circle_filled(
                         P[f, 0, i, 0],
                         P[f, 0, i, 1],
-                        75,
+                        25,
                         imgui.get_color_u32_rgba(0, 1, 0, 0.2),
                     )
                 else:

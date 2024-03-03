@@ -24,9 +24,6 @@ def make(env_name: str, train: bool = False) -> environment.Environment:
 
     elif env_name == "Prober-v0":
         env = Prober(config)
-        
-    # print(f"Initialized {env.name} environment")
-    # print(env)
 
     if train:
         return env, train_config

@@ -23,10 +23,10 @@ def policy(
 
 
 class RolloutManager(object):
-    def __init__(self, env: Environment, map_action: Callable):
+    def __init__(self, env: Environment):
         # Setup functionalities for vectorized batch rollout
         self.env = env
-        self.map_action = map_action
+        # self.map_action = map_action
         self.select_action = self.select_action_ppo
 
     @eqx.filter_jit
@@ -73,13 +73,13 @@ class RolloutManager(object):
             obs, state, key, cum_reward, valid_mask = state_input
             key, key_step, key_net = jax.random.split(key, 3)
 
-            action_unmapped, _, _, key_net = self.select_action(
+            action, _, _, key_net = self.select_action(
                 train_state.model, obs, key_net
             )
             # dprint("{x}", x=num_envs)
-            action_agent = self.map_action(action_unmapped)
-            action, extra_out = scripted_act(state, self.env.params)
-            action = action.at[:, -1].set(action_agent)
+            # action_agent = self.map_action(action_unmapped)
+            _, extra_out = scripted_act(state, self.env.params)
+            # action = action.at[:, -1].set(action_agent)
 
             # action  = action_agent
 
@@ -100,7 +100,7 @@ class RolloutManager(object):
             # TODO Log prob and value should be used but that is a future problem.
             # We only return the action of the prober (last element).
             # y = [next_o, next_s, action[:, -1], new_valid_mask, done, reward]
-            y = [next_o, next_s, action_unmapped, new_valid_mask, done, reward]
+            y = [next_o, next_s, action, new_valid_mask, done, reward]
             # y = [new_valid_mask]
             return carry, y
 

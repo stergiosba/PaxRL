@@ -87,7 +87,7 @@ class SeparateGrid(Space):
     dtype: Union[jnp.float32, jnp.int32]
 
     def __init__(self, act_range: Sequence, dtype=jnp.float32):
-        """A 2D Grid of possible actions.
+        """A 2D Grid of possible actions including the final value as well.
 
         Args:
             act_range (Sequence): The range of possible actions for both axis.
@@ -107,7 +107,13 @@ class SeparateGrid(Space):
     def sample(
         self, key: chex.PRNGKey, shape: chex.ArrayDevice = (1,)
     ) -> chex.ArrayDevice:
-        """Sample random action uniformly from set of categorical choices."""
+        """Sample random action uniformly from set of categorical choices. The two axes are sampled independently.
+
+        Args:
+            - `key (chex.PRNGKey)`: Random key for sampling.
+            - `shape (tuple, optional)`: The shape of the sample. Defaults to (1,).
+
+        """
         key_1, key_2 = jrandom.split(key)
         axis_1_sample = jrandom.choice(key_1, self._axis_1, shape=shape)
         axis_2_sample = jrandom.choice(key_2, self._axis_2, shape=shape)

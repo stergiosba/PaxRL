@@ -12,7 +12,7 @@ from pax.wrappers import NormalizeObservationWrapper, FlattenObservationWrapper
 def prober_test(env_name="Prober-v0", save=False):
     env, train_config = make(env_name, train=True)
 
-    wrapped_env = FlattenObservationWrapper(NormalizeObservationWrapper(env))
+    wrapped_env = NormalizeObservationWrapper(FlattenObservationWrapper(env))
 
     key_input = jrandom.PRNGKey(wrapped_env.params.settings["seed"])
     key, key_model = jrandom.split(key_input)

@@ -23,7 +23,7 @@ from collections import deque
 class Trainer:
     def __init__(self, env):
         self.env = env
-        self.map_action = jit(vmap(env.action_space.map_action, in_axes=0))
+        # self.map_action = jit(vmap(env.action_space.map_action, in_axes=0))
         
     def save(self, filename, hyperparams, model):
         with open(filename, "wb") as f:
@@ -40,12 +40,12 @@ class Trainer:
             batch,
             key: chex.PRNGKey,
         ):
-            action_unmapped, log_pi, value, new_key = rollout_manager.select_action(
+            action, log_pi, value, new_key = rollout_manager.select_action(
                 train_state.model, obs, key
             )
-            action_agent = self.map_action(action_unmapped)
-            action, extra_in = scripted_act(state, self.env.params)
-            action = action.at[:, -1].set(action_agent)
+            # action_agent = self.map_action(action_unmapped)
+            _, extra_in = scripted_act(state, self.env.params)
+            # action = action.at[:, -1].set(action_agent)
 
             # action_unmapped, log_pi, value, new_key = rollout_manager.select_action(train_state.model, obs, key)
             # action_agent = self.map_action(action_unmapped)
@@ -59,7 +59,7 @@ class Trainer:
             )
 
             batch = batch_manager.append(
-                batch, obs, action_unmapped, reward, done, log_pi, value.flatten()
+                batch, obs, action, reward, done, log_pi, value.flatten()
             )
             return train_state, next_obs, next_state, batch, new_key
 
@@ -84,7 +84,7 @@ class Trainer:
 
         train_state = TrainState(model=model, optimizer=optimizer)
 
-        rollout_manager = RolloutManager(self.env, self.map_action)
+        rollout_manager = RolloutManager(self.env)
         batch_manager = BatchManager(
             train_config=train_config,
             action_space=self.env.action_space,
@@ -147,11 +147,11 @@ class Trainer:
                     self.save(f"ppo_agent_{total_steps}.eqx", {}, train_state.model)
 
                 if (step + 1) % train_config["render_every_epochs"] == 0:
-                    df = train_state.model.actor.layers[0].weight.T@train_state.model.actor.layers[0].weight
-                    df2 = train_state.model.critic.layers[0].weight.T@train_state.model.critic.layers[0].weight
+                    df = train_state.model.actor_1.layers[0].weight.T@train_state.model.actor_1.layers[0].weight
                     fig = px.imshow(df)
-                    # fig2 = px.imshow(df2)
                     fig.show()
+                    # df2 = train_state.model.actor_2.layers[0].weight.T@train_state.model.actor_2.layers[0].weight
+                    # fig2 = px.imshow(df2)
                     # fig2.show()
                     print(f"Rendering Performance after {total_steps} steps")
                     self.env.render(show_state, log_return)
