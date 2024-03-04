@@ -22,18 +22,21 @@ def prober_test(env_name="Prober-v0", save=False):
 
     s = time.time()
 
-    num_total_epochs, log_steps, log_return = trainer(model, key, train_config)
+    # num_total_epochs, log_steps, log_return = trainer(model, key, train_config)
+    b = trainer(model, key,train_config)
 
-    if save:
-        df = pd.DataFrame({"log_steps": log_steps, "log_return": log_return})
-        # create a folder for th save if it does not exist
-        folder_name = "log_experiments"
-        if not os.path.exists(folder_name):
-            os.mkdir(folder_name)
-        if not os.path.exists(f"{folder_name}/{env.name}"):
-            os.mkdir(f"{folder_name}/{env.name}")
-        df.index.rename("epoch", inplace=True)
-        df.to_csv(f"{folder_name}/{env.name}/ppo_{time.strftime('%m%d%Y_%H%M%S', time.gmtime())}.csv")
+    print(b)
+
+    # if save:
+    #     df = pd.DataFrame({"log_steps": log_steps, "log_return": log_return})
+    #     # create a folder for th save if it does not exist
+    #     folder_name = "log_experiments"
+    #     if not os.path.exists(folder_name):
+    #         os.mkdir(folder_name)
+    #     if not os.path.exists(f"{folder_name}/{env.name}"):
+    #         os.mkdir(f"{folder_name}/{env.name}")
+    #     df.index.rename("epoch", inplace=True)
+    #     df.to_csv(f"{folder_name}/{env.name}/ppo_{time.strftime('%m%d%Y_%H%M%S', time.gmtime())}.csv")
     
     print(f"Time for trainer: {time.time()-s}")
 

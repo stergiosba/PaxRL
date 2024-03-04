@@ -11,6 +11,7 @@ from typing import Any, Dict, Sequence, Tuple, Union, Callable
 from .reynolds_dynamics import scripted_act
 from jax.debug import print as dprint, breakpoint as brk
 
+
 @jit
 def r_max_interaction(B, leader):
     P = jnn.softmax(B)
@@ -41,7 +42,7 @@ def r_angle(X_dot_prev, X_dot):
 
 @jit
 def r_acceleration(state, action):
-    return la.norm(action** 2)
+    return la.norm(action**2)
 
 
 @jit
@@ -119,7 +120,7 @@ class Prober(Environment):
         self.observation_space = Box(obs_lower, obs_upper, obs_shape, obs_dtype)
 
         self.rewards = EnvRewards()
-        self.rewards.register(r_leader, -1.0)
+        self.rewards.register(r_leader_simple, 1.0)
         # self.rewards.register(r_acceleration, -0.000005)
 
     @eqx.filter_jit
@@ -154,9 +155,21 @@ class Prober(Environment):
             - `State (EnvState)`: The initial full state of the environment. Used internally.
         """
 
-        x_swarm, y_swarm = jrandom.uniform(key, minval=jnp.array([50,50]),maxval=jnp.array([750,750]),shape=(2,))
-        th = jnp.arange(0, self.n_scripted)*2*jnp.pi/(self.n_scripted)
-        init_X_scripted = jnp.vstack([x_swarm+30*jnp.cos(th),y_swarm+30*jnp.sin(th)]).T
+        # x_swarm, y_swarm = jrandom.uniform(
+        #     key, minval=jnp.array([50, 50]), maxval=jnp.array([750, 750]), shape=(2,)
+        # )
+        # th = jnp.arange(0, self.n_scripted) * 2 * jnp.pi / (self.n_scripted)
+        # init_X_scripted = jnp.vstack(
+        #     [x_swarm + 30 * jnp.cos(th), y_swarm + 30 * jnp.sin(th)]
+        # ).T
+
+
+        init_X_scripted = jrandom.uniform(
+            key,
+            minval=jnp.array([75, 75]),
+            maxval=jnp.array([125, 125]),
+            shape=(self.n_scripted, 2),
+        )
 
         # init_X_dot_scripted = 5 * jrandom.uniform(
         #     key, minval=-0, maxval=0, shape=(self.n_scripted, 2)
@@ -183,8 +196,12 @@ class Prober(Environment):
         leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
         # leader = 3
 
+        # final_goal = jrandom.uniform(
+        #     key, minval=jnp.array([100, 100]), maxval=jnp.array([700, 700]), shape=(2,)
+        # )
+
         final_goal = jrandom.uniform(
-            key, minval=jnp.array([100, 100]), maxval=jnp.array([700, 700]), shape=(2,)
+            key, minval=jnp.array([650, 50]), maxval=jnp.array([700, 125]), shape=(2,)
         )
         init_leader = init_X_scripted[leader]
 
@@ -213,7 +230,7 @@ class Prober(Environment):
 
     @eqx.filter_jit
     def step_env(
-        self, key, state: EnvState, action: chex.ArrayDevice, extra_in: Any
+        self, key, state: EnvState, action: chex.ArrayDevice
     ) -> Tuple[
         Sequence[chex.ArrayDevice], EnvState, chex.ArrayDevice, chex.ArrayDevice
     ]:
@@ -229,7 +246,24 @@ class Prober(Environment):
         """
         # Saving the previous state.
         prev_state = state
-        total_action = 10 * jnp.sqrt(2)*jnp.array([jnp.ones([self.n_agents+self.n_scripted,]),-jnp.ones([self.n_agents+self.n_scripted,])]).T
+        total_action = (
+            10
+            * jnp.sqrt(2)
+            * jnp.array(
+                [
+                    jnp.ones(
+                        [
+                            self.n_agents + self.n_scripted,
+                        ]
+                    ),
+                    -jnp.ones(
+                        [
+                            self.n_agents + self.n_scripted,
+                        ]
+                    ),
+                ]
+            ).T
+        )
 
         # brk()
         action = self.map_action(action)
@@ -238,7 +272,7 @@ class Prober(Environment):
         total_action = total_action.at[-1, :].set(action)
         # scripted_action = scripted_act(state, self.params)
         acc = total_action
-        new_interactions = extra_in[0]
+        new_interactions = jnp.zeros(shape=self.n_scripted)
         dt = self.params.settings["dt"]
         # Applying the action to the state and getting the new state. Clipping the velocity to a maximum of 10 * sqrt(2) per axis.
         X_dot = jnp.clip(

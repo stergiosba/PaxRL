@@ -14,8 +14,8 @@ class ObservationWrapper(Wrapper):
         obs, state = self.env.reset(key)
         return self.observation_map(obs, *args), state
 
-    def step(self, key, state, action: chex.ArrayDevice, extra_in, *args) -> Tuple[chex.ArrayDevice, chex.ArrayDevice, chex.ArrayDevice]:
-        obs, state, reward, done = self.env.step(key, state, action, extra_in)
+    def step(self, key, state, action: chex.ArrayDevice, *args) -> Tuple[chex.ArrayDevice, chex.ArrayDevice, chex.ArrayDevice]:
+        obs, state, reward, done = self.env.step(key, state, action)
         return self.observation_map(obs, *args), state, reward, done
 
     def observation_map(self, obs: chex.ArrayDevice, *args) -> chex.ArrayDevice:

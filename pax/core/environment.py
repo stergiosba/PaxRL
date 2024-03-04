@@ -28,7 +28,7 @@ class EnvRewards(eqx.Module):
 
     func: Dict[str, Callable]
     scales: Dict[str, float]
-    
+
     def __init__(self):
         self.func = {}
         self.scales = {}
@@ -38,9 +38,12 @@ class EnvRewards(eqx.Module):
         self.scales[reward_func.__name__] = scale
 
     def apply(self, prev_state: EnvState, action: chex.ArrayDevice, state: EnvState):
-        rew = [self.func[name](state, action)*self.scales[name] for name in self.func.keys()]
+        rew = [
+            self.func[name](state, action) * self.scales[name]
+            for name in self.func.keys()
+        ]
         return jnp.array(rew)
-    
+
     def total(self, prev_state: EnvState, action: chex.ArrayDevice, state: EnvState):
         return self.apply(prev_state, action, state).sum()
 
@@ -53,7 +56,7 @@ class Environment(eqx.Module):
     It encapsulates an environment with arbitrary dynamics. It is a subclass of `equinox.Module` making it jittable.
     An environment can be partially or fully observable.
     """
-    
+
     params: EnvParams
     action_space: Space
     observation_space: Space
@@ -61,11 +64,7 @@ class Environment(eqx.Module):
 
     @eqx.filter_jit
     def step(
-        self,
-        key: chex.PRNGKey,
-        state: EnvState,
-        action: chex.ArrayDevice,
-        extra_in: chex.ArrayDevice = None,
+        self, key: chex.PRNGKey, state: EnvState, action: chex.ArrayDevice
     ) -> Tuple[chex.ArrayDevice, EnvState, chex.ArrayDevice, chex.ArrayDevice]:
         """Steps the environment. This is to be used externally after implementing the reset_env function for a specific environment.
 
@@ -82,9 +81,7 @@ class Environment(eqx.Module):
             - `done (chex.ArrayDevice)`: Done flag.
         """
         key_step, key_reset = jrandom.split(key)
-        obs_step, state_step, reward, done = self.step_env(
-            key_step, state, action, extra_in
-        )
+        obs_step, state_step, reward, done = self.step_env(key_step, state, action)
 
         # Automatic reset
         obs_reset, state_reset = self.reset_env(key_reset)
@@ -113,7 +110,6 @@ class Environment(eqx.Module):
         key: chex.PRNGKey,
         state: EnvState,
         action: chex.ArrayDevice,
-        extra_in: chex.ArrayDevice = None,
     ):
         """Steps a specific environment (To be implemented on a per-environment basis)
 

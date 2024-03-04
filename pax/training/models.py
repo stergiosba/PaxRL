@@ -62,13 +62,12 @@ class Agent(eqx.Module):
     critic: eqx.Module
     actor_1: eqx.Module
     # actor_2: eqx.Module
-    action_space_size: chex.ArrayDevice
 
     def __init__(self, env: Environment, key: chex.PRNGKey):
         # TODO: Refactor this agent to be more general.
 
         obs_shape = env.observation_space.shape
-        self.action_space_size = env.action_space.size
+        action_space_size = env.action_space.size
 
         keys = jrandom.split(key, 6)
 
@@ -98,7 +97,7 @@ class Agent(eqx.Module):
                 eqx.nn.Lambda(jnn.tanh),
                 QRLinear(256, 128, jnp.sqrt(1), key=keys[4]),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(128, self.action_space_size, jnp.array([0.01]), key=keys[5]),
+                QRLinear(128, action_space_size, jnp.array([0.01]), key=keys[5]),
             ]
         )
 
@@ -119,4 +118,4 @@ class Agent(eqx.Module):
 
         split_logits = jnp.split(logits, [11])
 
-        return value, split_logits
+        return split_logits, value 
