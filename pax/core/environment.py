@@ -17,27 +17,30 @@ class EnvParams(eqx.Module):
 
 
 class EnvRewards(eqx.Module):
-    """The environment rewards. Essentially a set of dictionaries that can pass via jit.
-
-    `Args`:
-        - `r_max_interaction (Callable)`: The reward for the maximum interaction.
-        - `r_leader (Callable)`: The reward for the leader.
-        - `r_target (Callable)`: The reward for the target.
-        - `r_angle (Callable)`: The reward for the angle.
-    """
-
     func: Dict[str, Callable]
     scales: Dict[str, float]
 
     def __init__(self):
+        """Initializes the environment rewards.
+
+        `Args`:
+            - `func (Dict)`: The reward callables, to be called during stepping the environment.
+            - `scales (Dict)`: The reward scales, to scale rewards to a common base.
+        """
         self.func = {}
         self.scales = {}
 
     def register(self, reward_func: Callable, scale: float = 1.0):
+        """
+            Registers a reward function with its scale in the respective dictionaries with key equal to the callable name.
+        """
         self.func[reward_func.__name__] = reward_func
         self.scales[reward_func.__name__] = scale
 
     def apply(self, prev_state: EnvState, action: chex.ArrayDevice, state: EnvState):
+        """
+            Applies the reward functions to the environment based on state transition and action.
+        """
         rew = [
             self.func[name](state, action) * self.scales[name]
             for name in self.func.keys()
@@ -45,6 +48,9 @@ class EnvRewards(eqx.Module):
         return jnp.array(rew)
 
     def total(self, prev_state: EnvState, action: chex.ArrayDevice, state: EnvState):
+        """
+            Returns the total reward for the environment.
+        """
         return self.apply(prev_state, action, state).sum()
 
     def __repr__(self):
@@ -64,7 +70,7 @@ class Environment(eqx.Module):
 
     @eqx.filter_jit
     def step(
-        self, key: chex.PRNGKey, state: EnvState, action: chex.ArrayDevice
+        self, key: chex.PRNGKey, state: EnvState, action: chex.ArrayDevice, params=None
     ) -> Tuple[chex.ArrayDevice, EnvState, chex.ArrayDevice, chex.ArrayDevice]:
         """Steps the environment. This is to be used externally after implementing the reset_env function for a specific environment.
 
@@ -81,20 +87,19 @@ class Environment(eqx.Module):
             - `done (chex.ArrayDevice)`: Done flag.
         """
         key_step, key_reset = jrandom.split(key)
-        obs_step, state_step, reward, done = self.step_env(key_step, state, action)
+        obs_step, state_step, reward, done, info = self.step_env(key_step, state, action)
 
         # Automatic reset
         obs_reset, state_reset = self.reset_env(key_reset)
-        # TODO: Figure out why done needs to be indexed at 0
         state = jtu.tree_map(
-            lambda x, y: lax.select(done[0], x, y), state_reset, state_step
+            lambda x, y: lax.select(done, x, y), state_reset, state_step
         )
-        obs = lax.select(done[0], obs_reset, obs_step)
+        obs = lax.select(done, obs_reset, obs_step)
 
-        return obs, state, reward, done
+        return obs, state, reward, done, info
 
     @eqx.filter_jit
-    def reset(self, key: chex.PRNGKey):
+    def reset(self, key: chex.PRNGKey, params=None):
         """Resets the environment. This is to be used externally after implementing the reset_env function for a specific environment.
 
         Args:
@@ -110,6 +115,7 @@ class Environment(eqx.Module):
         key: chex.PRNGKey,
         state: EnvState,
         action: chex.ArrayDevice,
+        params=None
     ):
         """Steps a specific environment (To be implemented on a per-environment basis)
 
@@ -124,7 +130,7 @@ class Environment(eqx.Module):
         """
         raise NotImplementedError
 
-    def reset_env(self, key: chex.PRNGKey):
+    def reset_env(self, key: chex.PRNGKey, params=None):
         """Resets a specific environment (To be implemented on a per-environment basis)
 
         Args:

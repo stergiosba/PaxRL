@@ -6,9 +6,9 @@
 
 ## What is PaxRL
 
-PaxRL is a Deep Reinforcement Learning (DRL) framework based on  [`gymnax`](https://github.com/RobertTLange/gymnax) to achieve:
-* Efficient simulation for Swarm Robotic applications.
-* Training of probing agents.
+PaxRL is a Deep Reinforcement Learning (DRL) to achieve:
+* Efficient simulation for Swarm Robotic applications using the paradigm of [`gymnax`](https://github.com/RobertTLange/gymnax) .
+* Training of probing agents based on the excellent [`purejaxrl`](https://github.com/luchris429/purejaxrl) .
 
 ## Installation:
 

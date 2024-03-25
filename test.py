@@ -12,7 +12,7 @@ from tensorflow_probability.substrates import jax as tfp
 import plotly.figure_factory as ff
 
 def make_model(env_name, key):
-    env, _ = pax.make(env_name)
+    env = pax.make(env_name)
     return env, pax.training.Agent(env, key)
 
 def load(filename, model):
@@ -41,7 +41,7 @@ obs = np.array(obs)
 
 # agent_1 = load("ppo_agent_1.eqx", model)
 # agent_2 = load("ppo_agent_4.eqx", model)
-agent = load("ppo_agent_fixed_withprev.eqx", model)
+agent = load("ppo_agent_final.eqx", model)
 
 
 # action = env.action_space.sample(key)

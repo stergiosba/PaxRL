@@ -6,52 +6,49 @@
 
     [environment.scenario]
         n_agents = 1
-        n_scripted_entities = 5
+        n_scripted_entities = 10
         episode_size = 1024
-        agent_radius = 40
+        agent_radius = 60
         ldr_radius = 160
-        prb_radius = 50
-        ldr_str = 50
-        prb_str = 60
-        w_c = 0.5
+        prb_radius = 60
+        ldr_str = 5
+        prb_str = 100
+        w_c = 0.7
         w_a = 0.7
         w_s = 1.0
-        Kp_l = 5.0
+        max_speed = 20
+        max_force = 40
+        Kp_l = 0.5
+        Ki_l = 0.3
 
     [environment.action_space]
-        lower = -250
-        upper = 250
-        step = 50
+        lower = -100
+        upper = 100
+        step = 20
 
     [environment.observation_space]
         limits = [0, 800]
         lower = 0
         upper = 800
-        use_previous_state = false
-
-    # [environment.rewards]
-    #     reward_collision = -1.0
-    #     reward_goal = 1.0
-    #     reward_time = -0.01
-    #     reward_scripted = 0.0
+        use_previous_state = true
+        noise_str = 0
 
 [ppo]
     # General parameters
-    n_train_steps = 2_000_000_000
-    evaluate_every_epochs = 50_000
+    n_train_steps = 150_000_000
+    evaluate_every_epochs = 500
     checkpoint_every_epochs = 200_000
     render_every_epochs = 200_000
-    n_test_rollouts = 1024
 
     # PPO parameters for learning
-    n_train_envs = 8  # "Number of environments for training"
+    n_train_envs = 2048  # "Number of environments for training"
     discount = 0.99 # "Discount factor for rewards"
     gae_lambda = 0.95 # "Lambda for Generalized Advantage Estimation"
     n_steps = 512 # "Number of steps per environment per update"
-    n_minibatch = 8 # "Number of PPO minibatches"
+    n_minibatch = 32 # "Number of PPO minibatches"
     epoch_ppo = 4 # "Number of epochs per PPO update"
     clip_eps = 0.2 # "Clipping parameter for PPO"
-    entropy_coeff = 0.01 # "Entropy coefficient for loss calculation" 
+    entropy_coeff = 0.005 # "Entropy coefficient for loss calculation" 
     critic_coeff = 0.5 # "Coefficient for critic loss"
 
     # Optimizer parameters

@@ -46,8 +46,27 @@ def r_acceleration(state, action):
 
 
 @jit
+def r_acceleration_masked(state, action):
+    r_mask = la.norm(state.X[-1] - state.X[state.leader]) <= 100
+    return r_mask * r_acceleration(state, action)
+
+
+@jit
+def r_alignment(state, action):
+    return jnp.dot(state.X_dot[-1], state.X_dot[state.leader]) / (
+        la.norm(state.X_dot[-1] + 10**-8) * la.norm(state.X_dot[state.leader] + 10**-8)
+    )
+
+
+@jit
+def r_aligment_masked(state, action):
+    r_mask = la.norm(state.X[-1] - state.X[state.leader]) <= 100
+    return r_mask * r_alignment(state, action)
+
+
+@jit
 def r_leader_simple(state, action):
-    return la.norm(state.X[-1] - state.X[state.leader]) < 25
+    return la.norm(state.X[-1] - state.X[state.leader]) <= 50
 
 
 class EnvState(eqx.Module):
@@ -66,7 +85,8 @@ class EnvState(eqx.Module):
     interactions: chex.ArrayDevice
     leader: chex.ArrayDevice
     curve: BezierCurve3
-    time: int
+    timestep: int
+    integral: chex.ArrayDevice
 
     def __repr__(self):
         return f"{__class__.__name__}: {str(self.__dict__)}"
@@ -120,12 +140,15 @@ class Prober(Environment):
         self.observation_space = Box(obs_lower, obs_upper, obs_shape, obs_dtype)
 
         self.rewards = EnvRewards()
-        self.rewards.register(r_leader_simple, 1.0)
-        # self.rewards.register(r_acceleration, -0.000005)
+        # self.rewards.register(r_leader, -1.0)
+        self.rewards.register(r_leader_simple, 2.0)
+        self.rewards.register(r_aligment_masked, 1.0)
+        self.rewards.register(r_acceleration_masked, -0.00005)
 
     @eqx.filter_jit
     def get_obs(
         self,
+        key: chex.PRNGKey,
         prev_state: EnvState,
         action: chex.ArrayDevice = None,
         new_state: EnvState = None,
@@ -138,12 +161,23 @@ class Prober(Environment):
         Returns:
             - `observation (chex.Array)`: The observable part of the state.
         """
+        noise_str = self.params.observation_space["noise_str"]
+        key_1, key_2 = jrandom.split(key)
+        random_1 = noise_str * jrandom.uniform(
+            key_1, shape=(self.n_agents + self.n_scripted, 2)
+        )
+        random_2 = noise_str * jrandom.uniform(
+            key_2, shape=(self.n_agents + self.n_scripted, 2)
+        )
 
-        return new_state.X
+        X_hat_prev = prev_state.X + random_1
+        X_hat = new_state.X + random_2
+
+        return jnp.vstack([X_hat_prev, X_hat])
 
     @eqx.filter_jit
     def reset_env(
-        self, key: chex.PRNGKey
+        self, key: chex.PRNGKey, params=None
     ) -> Tuple[Sequence[chex.ArrayDevice], EnvState]:
         """Resets the environment.
 
@@ -155,54 +189,52 @@ class Prober(Environment):
             - `State (EnvState)`: The initial full state of the environment. Used internally.
         """
 
-        # x_swarm, y_swarm = jrandom.uniform(
-        #     key, minval=jnp.array([50, 50]), maxval=jnp.array([750, 750]), shape=(2,)
-        # )
-        # th = jnp.arange(0, self.n_scripted) * 2 * jnp.pi / (self.n_scripted)
-        # init_X_scripted = jnp.vstack(
-        #     [x_swarm + 30 * jnp.cos(th), y_swarm + 30 * jnp.sin(th)]
-        # ).T
-
-
-        init_X_scripted = jrandom.uniform(
-            key,
-            minval=jnp.array([75, 75]),
-            maxval=jnp.array([125, 125]),
-            shape=(self.n_scripted, 2),
+        key_x, key_y = jrandom.split(key)
+        low = 100
+        high = 700
+        x_swarm = low + (high - low) * jrandom.randint(
+            key_x, shape=(), minval=0, maxval=2
+        )
+        y_swarm = low + (high - low) * jrandom.randint(
+            key_y, shape=(), minval=0, maxval=2
         )
 
-        # init_X_dot_scripted = 5 * jrandom.uniform(
-        #     key, minval=-0, maxval=0, shape=(self.n_scripted, 2)
-        # )
+        th = jnp.arange(0, self.n_scripted) * 2 * jnp.pi / (self.n_scripted)
+        init_X_scripted = jnp.vstack(
+            [x_swarm + 30 * jnp.cos(th), y_swarm + 30 * jnp.sin(th)]
+        ).T
+
+        init_X_dot_scripted = (
+            10
+            * jnp.sqrt(2)
+            * jrandom.uniform(key, minval=-1, maxval=1, shape=(self.n_scripted, 2))
+        )
         init_X_dot_scripted = jnp.zeros((self.n_scripted, 2))
 
-        # init_X_agents = jnp.array([[100, 600]])
-        # + jrandom.cauchy(
-        #     key, shape=(self.n_agents, 2)
-        # )
         init_X_agents = jrandom.uniform(
             key,
-            minval=jnp.array([475, 475]),
-            maxval=jnp.array([525, 525]),
+            minval=jnp.array([375, 375]),
+            maxval=jnp.array([425, 425]),
             shape=(self.n_agents, 2),
         )
-
-        init_X_dot_agents = (
-            jrandom.uniform(key, minval=-1, maxval=1, shape=(self.n_agents, 2))
-            * 10
-            * jnp.sqrt(2)
-        )
-
-        leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
-        # leader = 3
-
-        # final_goal = jrandom.uniform(
-        #     key, minval=jnp.array([100, 100]), maxval=jnp.array([700, 700]), shape=(2,)
+        # init_X_agents = jrandom.uniform(
+        #     key,
+        #     minval=jnp.array([275, 275]),
+        #     maxval=jnp.array([325, 325]),
+        #     shape=(self.n_agents, 2),
         # )
 
-        final_goal = jrandom.uniform(
-            key, minval=jnp.array([650, 50]), maxval=jnp.array([700, 125]), shape=(2,)
-        )
+        # init_X_dot_agents = (
+        #     jrandom.uniform(key, minval=-1, maxval=1, shape=(self.n_agents, 2))
+        #     * 10
+        #     * jnp.sqrt(2)
+        # )
+        init_X_dot_agents = jnp.zeros((self.n_agents, 2))
+
+        leader = jrandom.randint(key, shape=(), minval=0, maxval=self.n_scripted)
+        # leader = 0
+
+        final_goal = 800 - jnp.array([x_swarm, y_swarm])
         init_leader = init_X_scripted[leader]
 
         p0 = (4 * init_leader + 1 * final_goal) / 5
@@ -224,13 +256,15 @@ class Prober(Environment):
             interactions=jnp.zeros(shape=self.n_scripted),
             leader=leader,
             curve=leader_path_curve,
-            time=0,
+            timestep=0,
+            integral=jnp.zeros(shape=2),
         )
-        return (self.get_obs(init_state, None, init_state), init_state)  # type: ignore
+        
+        return (self.get_obs(key, init_state, None, init_state), init_state)
 
     @eqx.filter_jit
     def step_env(
-        self, key, state: EnvState, action: chex.ArrayDevice
+        self, key, state: EnvState, action: chex.ArrayDevice, params=None
     ) -> Tuple[
         Sequence[chex.ArrayDevice], EnvState, chex.ArrayDevice, chex.ArrayDevice
     ]:
@@ -246,37 +280,30 @@ class Prober(Environment):
         """
         # Saving the previous state.
         prev_state = state
-        total_action = (
-            10
-            * jnp.sqrt(2)
-            * jnp.array(
-                [
-                    jnp.ones(
-                        [
-                            self.n_agents + self.n_scripted,
-                        ]
-                    ),
-                    -jnp.ones(
-                        [
-                            self.n_agents + self.n_scripted,
-                        ]
-                    ),
-                ]
-            ).T
-        )
 
-        # brk()
-        action = self.map_action(action)
-        # action, extra_out = scripted_act(state, self.env.params)
+        action = self.action_space.map_action(action)
 
+        total_action, extra_out = scripted_act(prev_state, self.params)
         total_action = total_action.at[-1, :].set(action)
-        # scripted_action = scripted_act(state, self.params)
         acc = total_action
-        new_interactions = jnp.zeros(shape=self.n_scripted)
+
+        new_interactions, new_integral = extra_out
         dt = self.params.settings["dt"]
         # Applying the action to the state and getting the new state. Clipping the velocity to a maximum of 10 * sqrt(2) per axis.
-        X_dot = jnp.clip(
-            state.X_dot + dt / 6 * acc, a_min=-10 * jnp.sqrt(2), a_max=10 * jnp.sqrt(2)
+
+        X_dot = jnp.concatenate(
+            [
+                jnp.clip(
+                    prev_state.X_dot[:-1] + dt / 6 * acc[:-1],
+                    a_min=-10 * jnp.sqrt(2),
+                    a_max=10 * jnp.sqrt(2),
+                ),
+                jnp.clip(
+                    prev_state.X_dot[-1] + dt / 1 * acc[-1],
+                    a_min=-15 * jnp.sqrt(2),
+                    a_max=15 * jnp.sqrt(2),
+                ).reshape(1, -1),
+            ]
         )
 
         X = state.X + dt * X_dot
@@ -284,33 +311,44 @@ class Prober(Environment):
             X, a_min=self.observation_space.low, a_max=self.observation_space.high
         )
 
-        new_state = EnvState(X, X_dot, new_interactions, state.leader, state.curve, state.time + 1)  # type: ignore
+        new_state = EnvState(
+            X,
+            X_dot,
+            new_interactions,
+            state.leader,
+            state.curve,
+            state.timestep + 1,
+            new_integral,
+        )
 
         # Using the transition from the previous state (s) to the new state (s') using action (a).
         # s, a -> s' : And then obtaining the observations and rewards.
-        obs = self.get_obs(prev_state, action, new_state)
-        reward = self.rewards.total(prev_state, action, new_state)
+        obs = self.get_obs(key, prev_state, action, new_state)
+        reward = self.rewards.apply(prev_state, action, new_state)
         done = self.is_terminal(new_state)
 
-        return (obs, new_state, jnp.array([reward]), done)
+        # info = {"state": new_state}
+        info = {}
+
+        return lax.stop_gradient(obs), lax.stop_gradient(new_state), reward, done, info
 
     def is_terminal(self, state):
         # The state.curve(1.0) is the final goal
         norm_e = la.norm(state.curve.eval(1.0) - state.X[state.leader])
 
-        done_1 = lax.select(norm_e < 50, jnp.array([1.0]), jnp.array([0.0]))
+        done_1 = lax.select(norm_e < 50, jnp.array(1.0), jnp.array(0.0))
 
-        done_2 = state.time == self.params.scenario["episode_size"]
+        done_2 = state.timestep == self.params.scenario["episode_size"]
 
         done_3 = lax.select(
             jnp.any(state.X[-1] <= self.observation_space.low),
-            jnp.array([1.0]),
-            jnp.array([0.0]),
+            jnp.array(1.0),
+            jnp.array(0.0),
         )
         done_4 = lax.select(
             jnp.any(state.X[-1] >= self.observation_space.high),
-            jnp.array([1.0]),
-            jnp.array([0.0]),
+            jnp.array(1.0),
+            jnp.array(0.0),
         )
         done_12 = jnp.logical_or(done_1, done_2)
         done_34 = jnp.logical_or(done_3, done_4)
@@ -318,7 +356,7 @@ class Prober(Environment):
 
         return done
 
-    def render(self, state, log_returns):
+    def render(self, state, env_id=0, log_returns=None):
         try:
             import imgui
             import glfw
@@ -358,43 +396,61 @@ class Prober(Environment):
             draw_list = imgui.get_window_draw_list()
             f = t % P.shape[0]
             for i in range(P.shape[2] - 1):
-                if i == L[f, 0]:
+                if i == L[f, env_id]:
                     draw_list.add_circle_filled(
-                        P[f, 0, i, 0],
-                        P[f, 0, i, 1],
+                        P[f, env_id, i, 0],
+                        P[f, env_id, i, 1],
                         10,
                         imgui.get_color_u32_rgba(0, 1, 0, 1),
                     )
                     draw_list.add_circle_filled(
-                        P[f, 0, i, 0],
-                        P[f, 0, i, 1],
-                        25,
+                        P[f, env_id, i, 0],
+                        P[f, env_id, i, 1],
+                        75,
                         imgui.get_color_u32_rgba(0, 1, 0, 0.2),
                     )
                 else:
                     draw_list.add_circle_filled(
-                        P[f, 0, i, 0],
-                        P[f, 0, i, 1],
+                        P[f, env_id, i, 0],
+                        P[f, env_id, i, 1],
                         10,
                         imgui.get_color_u32_rgba(0, 0, 1, 1),
                     )
 
             draw_list.add_circle_filled(
-                P[f, 0, i + 1, 0],
-                P[f, 0, i + 1, 1],
+                P[f, env_id, i + 1, 0],
+                P[f, env_id, i + 1, 1],
                 10,
                 imgui.get_color_u32_rgba(1, 0, 0, 1),
             )
 
             draw_list.add_circle_filled(
-                G[f, 0, 0], G[f, 0, 1], 10, imgui.get_color_u32_rgba(1, 1, 0, 1)
+                P[f, env_id, i + 1, 0],
+                P[f, env_id, i + 1, 1],
+                60,
+                imgui.get_color_u32_rgba(1, 0, 0, 0.2),
+            )
+
+            mean_swarm = jnp.mean(P[f, env_id, :-1], axis=0)
+            draw_list.add_circle_filled(
+                mean_swarm[0],
+                mean_swarm[1],
+                10,
+                imgui.get_color_u32_rgba(0.8, 0, 0.8, 1),
+            )
+
+            draw_list.add_circle_filled(
+                G[f, env_id, 0],
+                G[f, env_id, 1],
+                10,
+                imgui.get_color_u32_rgba(1, 1, 0, 1),
             )
 
             draw_list.add_line(
-                P[f, 0, L[f, 0], 0],
-                P[f, 0, L[f, 0], 1],
-                P[f, 0, -1, 0],
-                P[f, 0, -1, 1],
+                P[f, env_id, L[f, env_id], 0],
+                P[f, env_id, L[f, env_id], 1],
+                P[f, env_id, -1, 0],
+                P[f, env_id, -1, 1],
                 imgui.get_color_u32_rgba(1, 1, 1, 1),
                 2,
             )
@@ -411,7 +467,7 @@ class Prober(Environment):
 
         render_time_step = 0
 
-        def show(self, state, log_returns, auto_start=True):
+        def show(self, state, log_returns=None, auto_start=True):
             record = self.params.settings["record"]
             global render_time_step
 
@@ -461,30 +517,37 @@ class Prober(Environment):
                         draw_list = create_circles(P, L, G, render_time_step)
                     render_time_step += 1
 
-                # with imgui.begin("Reward Panel"):
-                #     for i, r in enumerate(log_returns):
-                #         imgui.text(f"Epoch {i*1000}: Reward:{r}")
-
                 imgui.set_next_window_size(200, 200)
                 imgui.set_next_window_position(800, 0)
                 with imgui.begin("Control Panel"):
                     x = imgui.button("Start")
 
+                imgui.set_next_window_size(200, 200)
+                imgui.set_next_window_position(800, 200)
+                with imgui.begin("Custom window", flags=imgui.WINDOW_MENU_BAR):
+                    imgui.text(f"{state.timestep}")
+
+                imgui.set_next_window_size(400, 400)
+                imgui.set_next_window_position(800, 400)
+                with imgui.begin("Custom window2", flags=imgui.WINDOW_MENU_BAR):
+                    imgui.text(f"{state.interactions}")
+
                 if x:
                     auto_start = True
 
-                imgui.set_next_window_size(200, 200)
-                imgui.set_next_window_position(800, 200)
-                imgui.plot_lines(
-                    "Returns",
-                    np.array(log_returns),
-                    overlay_text="Rewards",
-                    # offset by one item every milisecond, plot values
-                    # buffer its end wraps around
-                    # values_offset=int(time() * 100) % L[-1],
-                    # 0=autoscale => (0, 50) = (autoscale width, 50px height)
-                    graph_size=(0, 100),
-                )
+                if log_returns is not None:
+                    imgui.set_next_window_size(200, 200)
+                    imgui.set_next_window_position(800, 200)
+                    imgui.plot_lines(
+                        "Returns",
+                        np.array(log_returns),
+                        overlay_text="Rewards",
+                        # offset by one item every milisecond, plot values
+                        # buffer its end wraps around
+                        # values_offset=int(time() * 100) % L[-1],
+                        # 0=autoscale => (0, 50) = (autoscale width, 50px height)
+                        graph_size=(0, 100),
+                    )
 
                 imgui.render()
 

@@ -1,4 +1,3 @@
-#%%
 import chex
 import jax.numpy.linalg as la
 from jax import jit, numpy as jnp, nn as jnn
@@ -8,9 +7,9 @@ from pax.core.environment import EnvParams
 from functools import partial
 from pax.core.state import EnvState
 
-
 @jit
 def reynolds_dynamics(leader, X, X_dot, B, time, params):
+    n_env, _, _ = X.shape
     def interaction_steer(T_d,
         max_force: float = 60, eps: float = 10 ** -8
     ) -> chex.ArrayDevice:
@@ -26,13 +25,11 @@ def reynolds_dynamics(leader, X, X_dot, B, time, params):
             chex.ArrayDevice: _description_
         """
 
-        Diff = X - X[-1]
-        interaction = jnp.nan_to_num(Diff / (T_d[-1][:, None])**0.5)
-
+        Diff = X - X[jnp.arange(n_env), None, -1]
+        interaction = jnp.nan_to_num(Diff / (T_d[..., -1][..., None]))
         return max_force * (
-            interaction / (la.norm(interaction + eps, axis=-1)[:, None])
+            interaction / (la.norm(interaction + eps, axis=-1)[..., None])
         )
-
     
     
     def swarm_reynolds(
@@ -40,7 +37,7 @@ def reynolds_dynamics(leader, X, X_dot, B, time, params):
         X: chex.ArrayDevice,
         X_dot: chex.ArrayDevice,
         time,
-        params,
+        params: EnvParams,
     ) -> Tuple[chex.ArrayDevice, chex.ArrayDevice]:
         """`Rax`: Leader modified Reynolds flocking model in Jax.
 
@@ -57,35 +54,34 @@ def reynolds_dynamics(leader, X, X_dot, B, time, params):
             - `leader (chex.ArrayDevice)`: The id number of the leader for every environment.
         """
 
-        def distance_matrix_jax() -> chex.ArrayDevice:
+        def distance_tensor_jax() -> chex.ArrayDevice:
             """Parallelized calculation of euclidean distances between all pairs of swarm agents
                 for all environment instances in one go.
 
             Args:
-                `X (chex.Array)`: Swarm agents position matrix of shape: (n_agents,2).
+                `X (chex.Array)`: Swarm agents position tensor of shape: (n_envs,n_agents,2).
 
             Returns:
-                `Distance_matrix (chex.Array)`: Distance matrix of shape: (n_agents,n_agents)
+                `Distance_matrix (chex.Array)`: Distance tensor of shape: (n_envs,n_agents,n_agents)
             """
-            return jnp.einsum("ijk->ij", (X[:, None] - X[None, :]) ** 2)
+            return jnp.einsum("ijkl->ijk", (X[:, None, ...] - X[..., None, :]) ** 2)
 
         def leader_neighbors(leader_radius: float) -> chex.ArrayDevice:
             """Calculates the neighborhood for the leader agent as a set for every parallel environment.
             Args:
-                - `leader_distances (chex.Array)`: Slice of distance matrix, distances between leader and each swarm agent for every
+                - `leader_distances (chex.Array)`: Slice of distance tensor, distances between leader and each swarm agent for every
                     parallel environment.
                 - `leader_radius (float)`: Influence radius for the leader agent (typically a scaled multiple of simple agent's radius)
 
             Returns:
                 - `leader_neighbors_matrix (chex.Array)`: Boolean matrix of leader's neighbors for each environment.
             """
-            leader_distances = T_d[leader]
+            leader_distances = T_d[jnp.arange(n_env), leader, :]
             leader_neighbors_matrix = (leader_distances > 0) & (
                 leader_distances <= (leader_radius) ** 2
             )
 
             return leader_neighbors_matrix
-
 
         def neighbors(agent_radius: float) -> Tuple[chex.ArrayDevice, chex.ArrayDevice]:
             """Calculates the neighborhood for each agent as a set and the cardinality of each set.
@@ -98,18 +94,12 @@ def reynolds_dynamics(leader, X, X_dot, B, time, params):
                 - `neighbors_tensor (chex.ArrayDevice)`: Tensor of neighbors for every agent and every environment.
                 - `neighbors_count (chex.ArrayDevice)`: Agent-wise sum of neighbors_tensor, i.e. cardinality of each neighborhood.
             """
-            neighbors_matrix = (T_d > 0) & (T_d <= 20 ** 2)
-            neighbors_matrix = neighbors_matrix.at[:,-1].set(False)
-
-            masked_leader_neighbors_matrix = neighbors_matrix.at[:, leader].set(False)
+            neighbors_tensor = (T_d > 0) & (T_d <= agent_radius ** 2)
 
             # Calculating all neighbors counts, Summing over the agents axis: 1.
-            neighbors_count = jnp.sum(neighbors_matrix, axis=1)
-            masked_leader_neighbors_count = jnp.sum(masked_leader_neighbors_matrix, axis=1)
+            neighbors_count = jnp.sum(neighbors_tensor, axis=1)
 
-            collision_matrix = (T_d > 0) & (T_d <= 40 ** 2)
-
-            return neighbors_matrix, neighbors_count, masked_leader_neighbors_matrix, masked_leader_neighbors_count, collision_matrix
+            return neighbors_tensor, neighbors_count
 
         def prober_neighbors(prober_radius: float) -> chex.ArrayDevice:
             """Calculates the neighborhood for the leader agent as a set for every parallel environment.
@@ -121,7 +111,7 @@ def reynolds_dynamics(leader, X, X_dot, B, time, params):
             Returns:
                 - `leader_neighbors_matrix (chex.Array)`: Boolean matrix of leader's neighbors for each environment.
             """
-            prober_distances = T_d[-1]
+            prober_distances = T_d[:, -1, :]
             prober_neighbors_matrix = (prober_distances > 0) & (
                 prober_distances <= (prober_radius) ** 2
             )
@@ -132,22 +122,28 @@ def reynolds_dynamics(leader, X, X_dot, B, time, params):
             """Calculates the influence of simple agents and then of the leader agent.
 
             Args:
-                - `X (chex.ArrayDevice)`: Swarm agents position matrix of shape: (n_agents, 2).
-                - `X_dot (chex.ArrayDevice)`: Swarm agents velocity matrix of shape: (n_agents, 2).
+                - `X (chex.ArrayDevice)`: Swarm agents position matrix of shape: (n,2).
+                - `X_dot (chex.ArrayDevice)`: Swarm agents velocity matrix of shape: (n,2).
                 - `neighbors_matrix (chex.ArrayDevice)`: Array of neighbors for every agent.
-                - `leader_neighbors_matrix (chex.ArrayDevice): The matrix of leader neighbors.
-                - `leader (chex.ArrayDevice): The ID of the leader
+                - `leader_neighbors_matrix (chex.ArrayDevice): _description_
+                - `leader (chex.ArrayDevice): _description_
 
             Returns:
                 - `chex.ArrayDevice`: _description_
             """
-            K = jnp.concat([X[None,:],X_dot[None,:]])
+            K = jnp.vstack([[X], [X_dot]])
 
-            neight_inf = T_nbr_noleader @ K
-            leader_inf = ldr_str * T_ldr[:, None] * (K[:, leader][:, None])
+            # Remove the leader from the normal neighborhood of each agent for the cohesion an alignment calculations
+            # The leader has his own influence calculated as leader_inf.
+            neighbors_tensor = T_nbr.at[jnp.arange(n_env), leader, :].set(False)
+
+            neight_inf = neighbors_tensor @ K
+            leader_inf = ldr_str * jnp.einsum(
+                "ij,kil->kijl", T_ldr, K[:, jnp.arange(n_env), leader, :]
+            )
 
             total_inf = neight_inf + leader_inf
-
+            # total_inf = total_inf.at[..., -1, :].set(jnp.array(0))
             return total_inf
 
         def mixed_steer(
@@ -171,20 +167,21 @@ def reynolds_dynamics(leader, X, X_dot, B, time, params):
                 - `mixed_steer (Tuple[chex.ArrayDevice, chex.ArrayDevice])`: The cohesion and alignment force exerted to each agent.
             """
 
-            T = total_infl / (total_neighbors[:, None] + eps)
+            T = total_infl / (total_neighbors[..., None] + eps)
+
             # Cohesion steer calculation
             coh = T[0] - X
-            coh = max_speed * (coh / (la.norm(coh + eps, axis=-1)[:, None])) #- X_dot
-            coh = max_force * (coh / la.norm(coh + eps, axis=-1)[:, None])
+            coh = max_speed * (coh / (la.norm(coh + eps, axis=-1)[..., None])) - X_dot
+            coh = max_force * (coh / la.norm(coh + eps, axis=-1)[..., None])
 
             # Alignment steer calculations
             alig = T[1]
-            alig = max_speed * (alig / (la.norm(alig + eps, axis=-1)[:, None])) #- X_dot
-            alig = max_force * (alig / la.norm(alig + eps, axis=-1)[:, None])
+            alig = max_speed * (alig / (la.norm(alig + eps, axis=-1)[..., None])) - X_dot
+            alig = max_force * (alig / la.norm(alig + eps, axis=-1)[..., None])
 
             # Leader whitening (i.e. cohesion and alignment of the leader are set to 0.)
-            # coh = coh.at[leader, :].set(jnp.array([0, 0]))
-            # alig = alig.at[leader, :].set(jnp.array([0, 0]))
+            coh = coh.at[jnp.arange(n_env), leader, :].set(jnp.array([0, 0]))
+            alig = alig.at[jnp.arange(n_env), leader, :].set(jnp.array([0, 0]))
 
             return coh, alig
 
@@ -208,14 +205,15 @@ def reynolds_dynamics(leader, X, X_dot, B, time, params):
                 - `chex.Array`: _description_
             """
             # TODO: We need a better seperation function.
-            scaled_neighbors_matrix = jnp.nan_to_num(collision_matrix / T_d)
+            scaled_neighbors_matrix = jnp.nan_to_num(T_nbr / T_d)
 
             # Separation steer calculation
             sep = (
-                scaled_neighbors_matrix.sum(axis=1)[:,None]*X - scaled_neighbors_matrix @ X
+                jnp.einsum("ijk,ijl->ijl", scaled_neighbors_matrix, X)
+                - scaled_neighbors_matrix @ X
             )
-            sep = max_speed * (sep / (la.norm(sep + eps, axis=-1)[:, None])) #- X_dot
-            sep = max_force * (sep / (la.norm(sep + eps, axis=-1)[:, None]))
+            sep = max_speed * (sep / (la.norm(sep + eps, axis=-1)[..., None])) - X_dot
+            sep = max_force * (sep / (la.norm(sep + eps, axis=-1)[..., None]))
 
             return sep
 
@@ -227,13 +225,10 @@ def reynolds_dynamics(leader, X, X_dot, B, time, params):
         w_c = params.scenario["w_c"]
         w_a = params.scenario["w_a"]
         w_s = params.scenario["w_s"]
-        max_speed = params.scenario["max_speed"]
-        max_force = params.scenario["max_force"]
-
 
         # The distance tensor, contains distance matrices for each separate environment. We calculate everything in parallel
         # for all environments.
-        T_d = distance_matrix_jax()
+        T_d = distance_tensor_jax()
 
         # The main diagonal of a distance matrix is 0 since d(i,i) is the distance of agent i from itself.
         # Therefore if we divide by the distances we would get 1/0. Adding ones matrix scaled down to eps
@@ -248,42 +243,46 @@ def reynolds_dynamics(leader, X, X_dot, B, time, params):
         T_ldr = leader_neighbors(ldr_radius)
 
         # Calculate he neighborhood of every swarm agent.
-        T_nbr, C_nbr, T_nbr_noleader, C_nbr_noleader, collision_matrix = neighbors(agent_radius)
+        T_nbr, C_nbr = neighbors(agent_radius)
 
         # Calculate the neighborhood of the prober.
         T_prb = prober_neighbors(prb_radius)
 
+        # For dynamic leader allocation. Later work.
+        # leader = jnp.argmax(neighbors_count, axis=0)
+
         # Calculate the total number of neighbors for each agent.
-        total_neighbors = C_nbr_noleader + ldr_str * T_ldr
+        total_neighbors = C_nbr + ldr_str * T_ldr
 
         # Influence from simple neighbors and leader
         total_infl = total_influence()
 
         # Cohesion and  Alignment steer calculation.
-        cohesion, alignment = mixed_steer(max_speed, max_force)
-
+        cohesion, alignment = mixed_steer()
         # Separation steer calculation.
-        separation = separation_steer(max_speed, max_force)
+        separation = separation_steer()
 
-        steer = w_c * cohesion + w_a * alignment + w_s * separation
+        # Performs neighbors masking.
+        total_mask = total_neighbors > 0
 
-        steer = steer.at[leader].set(jnp.array([0, 0]))
+        steer = jnp.einsum(
+            "ijm,ij->ijm", (w_c * cohesion + w_a * alignment + w_s * separation), total_mask
+        )
 
-        return steer, T_d, T_prb
+        return steer, T_prb, T_d
 
         
-    steer, T_d, T_prb = swarm_reynolds(leader, X, X_dot, time, params)
-
+    swarm_steer, T_prb, T_d  = swarm_reynolds(leader, X, X_dot, time, params)
+    
     # Prober interaction.
-    prb_str = params.scenario["prb_str"]
-    interaction = interaction_steer(T_d, prb_str)
+    interaction = interaction_steer(T_d)
     prober_mask = T_prb > 0
-    B += prober_mask[:-1]
+    B += prober_mask[:, :-1]
     
     # This sets the influences on the prober to 0.
-    steer = steer.at[-1, :].set(jnp.array([0, 0]))
+    steer = swarm_steer.at[..., -1, :].set(jnp.array([0, 0]))
 
-    steer += jnp.einsum("ij,i->ij", interaction, prober_mask)
+    steer += jnp.einsum("ijm,ij->ijm", interaction, prober_mask)
     
     return steer, B
 
@@ -292,14 +291,14 @@ def rk4_integration(dynamics_fun: Callable, state, params):
     dt = params.settings["dt"]
 
     s1, extra_out = dynamics_fun(
-        state.leader, state.X, state.X_dot, state.interactions, state.timestep, params
+        state.leader, state.X, state.X_dot, state.interactions, state.time[0], params
     )
     s2, extra_out = dynamics_fun(
         state.leader,
         state.X + 0.5 * dt * state.X_dot,
         state.X_dot + dt / 2 * s1,
         state.interactions,
-        state.timestep + 0.5 * dt,
+        state.time[0],
         params,
     )
     s3, extra_out = dynamics_fun(
@@ -307,7 +306,7 @@ def rk4_integration(dynamics_fun: Callable, state, params):
         state.X + 0.5 * dt * state.X_dot,
         state.X_dot + 0.5 * dt * s2,
         state.interactions,
-        state.timestep + 0.5 * dt,
+        state.time[0],
         params,
     )
     s4, extra_out = dynamics_fun(
@@ -315,7 +314,7 @@ def rk4_integration(dynamics_fun: Callable, state, params):
         state.X + dt * state.X_dot,
         state.X_dot + dt * s3,
         state.interactions,
-        state.timestep+ dt,
+        state.time[0],
         params,
     )
 
@@ -325,7 +324,7 @@ def rk4_integration(dynamics_fun: Callable, state, params):
 
 @jit
 def scripted_act(
-    state, params, *args
+    state: EnvState, params: EnvParams, *args
 ) -> Tuple[chex.ArrayDevice, int]:
     """Calculates the scripted action for the swarm members.
 
@@ -336,29 +335,64 @@ def scripted_act(
         - `steer` (chex.ArrayDevice): The steer vector of swarm members shape=(n_env, n, 2).
     """
 
+    @jit
+    def closest_member() -> chex.ArrayDevice:
+        """Tracks the closest member of the swarm to the prober.
+
+        Returns:
+            -`Position (chex.ArrayDevice)`: The position of the closest member of the swarm to the prober.
+        """
+        closest = la.norm(X - X[jnp.arange(n_env), None, -1], axis=-1)[:, :-1]
+
+        return X[jnp.arange(n_env), jnp.argmin(closest, axis=1)]
+
+    @jit
+    def specific_member(memb_id: int) -> chex.ArrayDevice:
+        """Tracks a specific member of the swarm in every environment.
+
+        Args:
+            memb_id (int): The ID of the member to track.
+
+        Returns:
+            - `Position (chex.ArrayDevice)`: The position of the tracked member in every environment.
+        """
+        return X[jnp.arange(n_env), memb_id]
+
+    @jit
+    def swarm_center() -> chex.ArrayDevice:
+        """Tracks the center (average) of the swarm.
+
+        Returns:
+            - `Position (chex.ArrayDevice)`: The average position of the swarm members.
+        """
+        return jnp.mean(X[jnp.arange(n_env), 0:-1], axis=1)
+
+    @jit
+    def swarm_leader() -> chex.ArrayDevice:
+        """Tracks the leader of the swarm in every environment. The leader can and will be different for every environment.
+
+        Returns:
+            `Position (chex.ArrayDevice)` : The position of the leader in every environment.
+        """
+        return X[jnp.arange(n_env), leader]
 
     X = state.X
     leader = state.leader
-    time = state.timestep
+    time = state.time[0]
+    # dprint("{x}", x=X.shape)
+    n_env, _, _ = X.shape
 
-    T = (params.scenario["episode_size"] - 1)
+    # TODO: Actually fix this so that the leader goes to the points that it should but no faster pace.
+    ff = 0.66 * (params.scenario["episode_size"] - 1)
 
     steer, extra_out = rk4_integration(reynolds_dynamics, state, params)
 
-    e_leader = state.curve.eval(time) - X[leader]
-    new_integral = state.integral + e_leader
+    e_leader = state.curve.eval(time / ff) - X[jnp.arange(n_env), leader]
+    u_leader = params.scenario["Kp_l"] * e_leader
+    steer = steer.at[jnp.arange(n_env), leader].add(u_leader)
 
-    u_leader = params.scenario["Kp_l"] * e_leader + params.scenario["Ki_l"] * new_integral * params.settings["dt"]
-    u_leader = jnp.clip(u_leader, -params.scenario["max_force"], params.scenario["max_force"])
-    steer = steer.at[leader].add(u_leader)
+    # e_prob = swarm_leader() - X[jnp.arange(n_env), -1]
+    # u_prob = params.scenario["Kp_p"] * e_prob
+    # steer = steer.at[jnp.arange(n_env), -1].add(u_prob)
 
-    extra_out = (extra_out, new_integral)
-
-
-    # e_prob = X[leader] - X[-1]
-    # u_prob = 2 * e_prob
-    # steer = steer.at[-1].add(u_prob)
-    # dprint("{x}", x = u_leader)
-
-    # steer = jnp.clip(steer, -1*params.scenario["max_force"], 1*params.scenario["max_force"])
     return steer, extra_out

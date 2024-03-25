@@ -56,9 +56,9 @@ class RolloutManager(object):
         )
 
     @eqx.filter_jit
-    def batch_step(self, key, state: EnvState, action, extra_out=None):
+    def batch_step(self, key, state: EnvState, action):
         return jax.vmap(self.env.step, in_axes=(0, 0, 0, None))(
-            key, state, action, extra_out
+            key, state, action
         )
 
     @eqx.filter_jit
@@ -76,16 +76,10 @@ class RolloutManager(object):
             action, _, _, key_net = self.select_action(
                 train_state.model, obs, key_net
             )
-            # dprint("{x}", x=num_envs)
-            # action_agent = self.map_action(action_unmapped)
-            _, extra_out = scripted_act(state, self.env.params)
-            # action = action.at[:, -1].set(action_agent)
-
-            # action  = action_agent
 
             key_step = jax.random.split(key_step, num_envs)
-            next_o, next_s, reward, done = self.batch_step(
-                key_step, state, action, extra_out
+            next_o, next_s, reward, done, _ = self.batch_step(
+                key_step, state, action
             )
 
             new_cum_reward = cum_reward + reward * valid_mask

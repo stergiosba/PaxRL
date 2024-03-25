@@ -1,1 +1,2 @@
 from .observation import ObservationWrapper, NormalizeObservationWrapper, FlattenObservationWrapper
+from .logger import LogWrapper

@@ -6,25 +6,19 @@ import numpy as np
 import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jrandom
-from collections import defaultdict
-from typing import NamedTuple
-from pax.training import RolloutManager, BatchManager, TrainState
+from typing import NamedTuple, Dict
+from pax.training import TrainState
 from pax.core.environment import EnvState
-from pax.utils.read_toml import read_config
-from pax.environments import scripted_act
 from jax import jit, vmap
-from tqdm import tqdm
-from typing import Tuple
 from jax.debug import print as dprint, breakpoint as brk
 from tensorflow_probability.substrates import jax as tfp
 import plotly.express as px
-from collections import deque
+import pandas as pd
 
 
 class Trainer:
     def __init__(self, env):
         self.env = env
-        self.map_action = jit(vmap(env.action_space.map_action, in_axes=0))
 
     def save(self, filename, hyperparams, model):
         with open(filename, "wb") as f:
@@ -34,8 +28,10 @@ class Trainer:
 
     def __call__(self, model, key, train_config):
 
-        n_total_epochs = int(
-            train_config["n_train_steps"] // train_config["n_train_envs"] + 1
+        n_total_updates = int(
+            train_config["n_train_steps"]
+            // train_config["n_steps"]
+            // train_config["n_train_envs"]
         )
 
         n_steps_warm_up = int(train_config["n_train_steps"] * train_config["lr_warmup"])
@@ -55,60 +51,48 @@ class Trainer:
 
         train_state = TrainState(params=params, optimizer=optimizer)
 
-        rollout_manager = RolloutManager(self.env)
-        # batch_manager = BatchManager(
-        #     train_config=train_config,
-        #     action_space=self.env.action_space,
-        #     state_shape=self.env.observation_space.size,
-        # )
-        # # Reset the batch buffer
-        # batch = batch_manager.reset()
         # Split the key as necessary
-        rng, rng_step, rng_reset, rng_eval, rng_update = jrandom.split(key, 5)
+        rng, rng_reset = jrandom.split(key, 2)
 
         # Run the initialization step of the environments at this point
         # the observation has shape (n_env, n_agents, 2)
-        obs, state = rollout_manager.batch_reset(
-            rng_reset, train_config["n_train_envs"]
-        )
 
-        # total_steps = 0
-        # log_steps, log_return = [], []
-        # logg_return = deque(maxlen=num_total_epochs)
+        obs, state = jax.vmap(self.env.reset, in_axes=(0))(
+            jax.random.split(rng_reset, train_config["n_train_envs"])
+        )
 
         def update(runner_state, unused):
 
-            def _env_step(runner_state, unused):
+            def _get_transition(runner_state, unused):
                 train_state, state, last_obs, rng = runner_state
                 # SELECT ACTION
                 rng, _rng = jax.random.split(rng)
-                # value, split_logits = train_state.apply(last_obs, static)
                 split_logits, value = vmodel(last_obs)
                 multi_pi = tfp.distributions.Categorical(logits=split_logits)
                 action = multi_pi.sample(seed=key)
                 log_prob = multi_pi.log_prob(action)
-                # return action.T, log_prob.sum(0), value.flatten(), key
 
                 # STEP ENV
                 rng, _rng = jax.random.split(rng)
                 rng_step = jax.random.split(_rng, train_config["n_train_envs"])
-                obs, state, reward, done = jax.vmap(self.env.step, in_axes=(0, 0, 0))(
+                obs, state, reward, done, info = jax.vmap(self.env.step, in_axes=(0, 0, 0))(
                     rng_step, state, action.T
                 )
-
-                transition = Transition(done, action.T, value, reward, log_prob.T, last_obs)
-
+                # dprint("{x}",x=reward)
+                transition = Transition(
+                    done, action.T, value.flatten(), reward, log_prob.T, last_obs, info
+                )
                 runner_state = (train_state, state, obs, rng)
                 return runner_state, transition
 
             model = eqx.combine(runner_state[0].params, static)
-            vmodel = jit(vmap(model, in_axes=(0)))
+            vmodel = vmap(model, in_axes=(0))
             runner_state, traj_batch = jax.lax.scan(
-                _env_step, runner_state, None, train_config["n_steps"]
+                _get_transition, runner_state, None, train_config["n_steps"]
             )
 
             train_state, state, last_obs, rng = runner_state
-            _, last_val = vmodel(last_obs)
+            _, last_val = vmodel(last_obs)            
 
             def _calculate_gae(traj_batch, last_val):
                 def _get_advantages(gae_and_next_value, transition):
@@ -118,17 +102,10 @@ class Trainer:
                         transition.value,
                         transition.reward,
                     )
-                    delta = (
-                        reward
-                        + train_config["discount"] * next_value * (1 - done)
-                        - value
-                    )
+                    delta = reward + train_config["discount"] * next_value * (1 - done) - value
                     gae = (
                         delta
-                        + train_config["discount"]
-                        * train_config["gae_lambda"]
-                        * (1 - done)
-                        * gae
+                        + train_config["discount"] * train_config["gae_lambda"] * (1 - done) * gae
                     )
                     return (gae, value), gae
 
@@ -140,8 +117,7 @@ class Trainer:
                     unroll=16,
                 )
                 return advantages, advantages + traj_batch.value
-
-            advantages, targets = _calculate_gae(traj_batch, last_val)
+            advantages, targets = _calculate_gae(traj_batch, last_val.flatten())
 
             def _update_epoch(update_state, unused):
                 def _update_minbatch(train_state, batch_info):
@@ -149,11 +125,11 @@ class Trainer:
 
                     def _loss_fn(params, traj_batch, gae, targets):
                         model = eqx.combine(params, static)
-                        vmodel = jit(vmap(model, in_axes=(0)))
+                        vmodel = vmap(model, in_axes=(0))
                         # RERUN NETWORK
                         split_logits, value = vmodel(traj_batch.obs)
                         multi_pi = tfp.distributions.Categorical(logits=split_logits)
-                        log_prob = multi_pi.log_prob(traj_batch.action.T)
+                        log_prob = multi_pi.log_prob(traj_batch.action.T).sum(axis=0)
 
                         # CALCULATE VALUE LOSS
                         value_pred_clipped = traj_batch.value + (
@@ -166,7 +142,7 @@ class Trainer:
                         )
 
                         # CALCULATE ACTOR LOSS
-                        ratio = jnp.exp(log_prob - traj_batch.log_prob.T).T
+                        ratio = jnp.exp(log_prob - traj_batch.log_prob.sum(axis=1))
                         gae = (gae - gae.mean()) / (gae.std() + 1e-8)
                         loss_actor1 = ratio * gae
                         loss_actor2 = (
@@ -177,8 +153,7 @@ class Trainer:
                             )
                             * gae
                         )
-                        loss_actor = -jnp.minimum(loss_actor1, loss_actor2)
-                        loss_actor = loss_actor.mean()
+                        loss_actor = -jnp.minimum(loss_actor1, loss_actor2).mean()
                         # Calculate the entropy loss
                         # H(X, Y) = H(X) + H(Y) for entropy of independent random variables X and Y.
                         # entropy = pi.entropy().mean()
@@ -189,16 +164,17 @@ class Trainer:
                             + train_config["critic_coeff"] * value_loss
                             - train_config["entropy_coeff"] * entropy
                         )
-                        # dprint("{x}",x=total_loss)
+
                         return total_loss, (value_loss, loss_actor, entropy)
 
                     grad_fn = eqx.filter_value_and_grad(_loss_fn, has_aux=True)
                     total_loss, grads = grad_fn(
                         train_state.params, traj_batch, advantages, targets
                     )
+                    # dprint("{x}", x=grads.actor.layers[0].weight)
                     train_state = train_state.apply_gradients(grads=grads)
 
-                    #So the gradients are zero because I am not using the model in the loss function.
+                    # So the gradients are zero because I am not using the model in the loss function.
                     return train_state, total_loss
 
                 train_state, traj_batch, advantages, targets, rng = update_state
@@ -227,7 +203,7 @@ class Trainer:
                     ),
                     shuffled_batch,
                 )
-                
+
                 train_state, total_loss = jax.lax.scan(
                     _update_minbatch, train_state, minibatches
                 )
@@ -239,29 +215,47 @@ class Trainer:
                 _update_epoch, update_state, None, train_config["epoch_ppo"]
             )
             train_state = update_state[0]
+            metric = traj_batch.info
             rng = update_state[-1]
-            metric = jnp.array([0])
-            # dprint("{x}",x=jnp.sum(traj_batch.reward,axis=0).mean())
-            # def callback(info):
-            #     # return_values = info["returned_episode_returns"][info["returned_episode"]]
-            #     # timesteps = info["timestep"][info["returned_episode"]] * train_config["n_train_envs"]
-            #     # timesteps = jnp.arange(100)
-            #     # return_values = jnp.ones([timesteps])
-            #     # for t in range(len(timesteps)):
-            #     #     print(f"global step={timesteps[t]}, episodic return={return_values[t]}")
-            #     print("hello from inside training")
-            # jax.debug.callback(callback, metric)
+
+
+            def callback(info):
+                # This is like a filter that takes only the values from info["returned_episode_returns"] where info["returned_episode"] is True
+                return_values = info["returned_episode_returns"][info["returned_episode"]]
+                timesteps = info["timestep"][info["returned_episode"]] * train_config["n_train_envs"]
+
+                
+                if len(return_values)!=0:
+                    R_mean.append(np.mean(return_values))
+                    R_std.append(np.std(return_values))
+                    np.savetxt("mean.csv", R_mean, delimiter=",\n", header="Mean")
+                    np.savetxt("std.csv", R_std, delimiter=",\n", header="Std")
+
+                    for t in range(len(timesteps)):
+                        print(f"global step={timesteps[t]}, episodic return={return_values[t]}")
+                    
+                    # print(info['reward_stats'][info["returned_episode"]])
+                    print("---------")
+
+                # if info["rewards_stats"].sum(axis=0).mean(axis=0)[2] > 30:
+                #     print(info)
+
+
+            jax.debug.callback(callback, metric)
             runner_state = (train_state, state, last_obs, rng)
             return runner_state, metric
 
+        # statistics = [pd.DataFrame(columns=["timestep", "returns", "std"])]
+        R_mean = []
+        R_std =[]
         rng, _rng = jax.random.split(rng)
         runner_state = (train_state, state, obs, _rng)
-        model = eqx.combine(train_state.params, static)
-
-        runner_state, metric = jax.lax.scan(
-            update, runner_state, None, n_total_epochs
-        )
-
+        sub_runs = 4
+        # for i in range(sub_runs):
+        runner_state, metric = jax.lax.scan(update, runner_state, None, n_total_updates//sub_runs)
+        runner_state, metric = jax.lax.scan(update, runner_state, None, n_total_updates//sub_runs)
+        runner_state, metric = jax.lax.scan(update, runner_state, None, n_total_updates//sub_runs)
+        runner_state, metric = jax.lax.scan(update, runner_state, None, n_total_updates//sub_runs)
         return runner_state, metric
 
 
@@ -272,3 +266,4 @@ class Transition(NamedTuple):
     reward: jnp.ndarray
     log_prob: jnp.ndarray
     obs: jnp.ndarray
+    info: Dict

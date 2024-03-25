@@ -1,18 +1,19 @@
 import os
 import time
+import equinox as eqx
 import jax.random as jrandom
 import jax.numpy.linalg as la
 import numpy as np
 import pax.training as paxt
 import pandas as pd
-from pax.training.models import Agent
+from pax.training.models import Agent, AgentCNN
 from pax import make
-from pax.wrappers import NormalizeObservationWrapper, FlattenObservationWrapper
+from pax.wrappers import NormalizeObservationWrapper, FlattenObservationWrapper, LogWrapper
 
 def prober_test(env_name="Prober-v0", save=False):
     env, train_config = make(env_name, train=True)
 
-    wrapped_env = NormalizeObservationWrapper(FlattenObservationWrapper(env))
+    wrapped_env = LogWrapper(FlattenObservationWrapper(env))
 
     key_input = jrandom.PRNGKey(wrapped_env.params.settings["seed"])
     key, key_model = jrandom.split(key_input)
@@ -23,9 +24,10 @@ def prober_test(env_name="Prober-v0", save=False):
     s = time.time()
 
     # num_total_epochs, log_steps, log_return = trainer(model, key, train_config)
-    b = trainer(model, key,train_config)
+    runner_state ,_ = eqx.filter_jit(trainer)(model, key, train_config)
 
-    print(b)
+
+    trainer.save("ppo_agent_final.eqx", {}, runner_state[0].params)
 
     # if save:
     #     df = pd.DataFrame({"log_steps": log_steps, "log_return": log_return})
@@ -44,15 +46,21 @@ def prober_test(env_name="Prober-v0", save=False):
 def target_test(env_name="Target-v0"):
     env, train_config = make(env_name, train=True)
 
+    # env =
+
     key_input = jrandom.PRNGKey(env.params.settings["seed"])
     key, key_model = jrandom.split(key_input)
 
     model = Agent(env, key_model)
+    _, static = eqx.partition(model, eqx.is_array)
     trainer = paxt.Trainer(env)
-
+    
     s = time.time()
 
-    num_total_epochs, log_steps, log_return = trainer(model, key, train_config)
+    runner_state, _ = trainer(model, key, train_config)
+
+    model = eqx.combine(runner_state[0].params, static)
+    trainer.save(f"ppo_agent_final.eqx", {}, model)
     print(f"Time for trainer: {time.time()-s}")
 
 

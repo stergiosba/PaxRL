@@ -43,37 +43,29 @@ class Trainer:
             action, log_pi, value, new_key = rollout_manager.select_action(
                 train_state.model, obs, key
             )
-            # action_agent = self.map_action(action_unmapped)
-            _, extra_in = scripted_act(state, self.env.params)
-            # action = action.at[:, -1].set(action_agent)
-
-            # action_unmapped, log_pi, value, new_key = rollout_manager.select_action(train_state.model, obs, key)
-            # action_agent = self.map_action(action_unmapped)
-            # action = action_agent
 
             new_key, key_step = jrandom.split(key)
             b_key = jrandom.split(key_step, train_config["num_train_envs"])
             # # Automatic env resetting in gymnax step!
-            next_obs, next_state, reward, done = rollout_manager.batch_step(
-                b_key, state, action, extra_in
+            next_obs, next_state, reward, done, _ = rollout_manager.batch_step(
+                b_key, state, action
             )
-
             batch = batch_manager.append(
                 batch, obs, action, reward, done, log_pi, value.flatten()
             )
             return train_state, next_obs, next_state, batch, new_key
 
-        num_total_epochs = int(
-            train_config["num_train_steps"] // train_config["num_train_envs"] + 1
+        n_total_epochs = int(
+            train_config["n_train_steps"] // train_config["n_train_envs"] + 1
         )
 
-        num_steps_warm_up = int(
-            train_config["num_train_steps"] * train_config["lr_warmup"]
+        n_steps_warm_up = int(
+            train_config["n_train_steps"] * train_config["lr_warmup"]
         )
         schedule_fn = optax.linear_schedule(
             init_value=-float(train_config["lr_begin"]),
             end_value=-float(train_config["lr_end"]),
-            transition_steps=num_steps_warm_up,
+            transition_steps=n_steps_warm_up,
         )
 
         optimizer = optax.chain(
@@ -81,8 +73,8 @@ class Trainer:
             optax.scale_by_adam(eps=1e-5),
             optax.scale_by_schedule(schedule_fn),
         )
-
-        train_state = TrainState(model=model, optimizer=optimizer)
+        params, static = eqx.partition(model, eqx.is_array)
+        train_state = TrainState(params=params, optimizer=optimizer)
 
         rollout_manager = RolloutManager(self.env)
         batch_manager = BatchManager(
@@ -98,14 +90,14 @@ class Trainer:
         # Run the initialization step of the environments at this point
         # the observation has shape (n_env, n_agents, 2)
         obs, state = rollout_manager.batch_reset(
-            rng_reset, train_config["num_train_envs"]
+            rng_reset, train_config["n_train_envs"]
         )
  
         total_steps = 0
         log_steps, log_return = [], []
-        logg_return = deque(maxlen=num_total_epochs)
+        logg_return = deque(maxlen=n_total_epochs)
         T = tqdm(
-            range(1, num_total_epochs + 1),
+            range(1, n_total_epochs + 1),
             colour="#950dFF",
             desc="PaxRL",
             leave=True,
@@ -117,11 +109,12 @@ class Trainer:
                 train_state, obs, state, batch, rng_step
             )
             # Increment the step counter
-            total_steps += train_config["num_train_envs"]
+            total_steps += train_config["n_train_envs"]
 
             if step % (train_config["n_steps"] + 1) == 0:
                 metric_dict, train_state, rng_update = update(
                     train_state,
+                    static,
                     batch_manager.get(batch),
                     train_config,
                     rng_update,
@@ -133,7 +126,7 @@ class Trainer:
                 show_state, reward, rewards = rollout_manager.batch_evaluate(
                     rng_eval,
                     train_state,
-                    train_config["num_test_rollouts"],
+                    train_config["n_test_rollouts"],
                 )
                 log_steps.append(total_steps)
                 log_return.append(rewards)
@@ -158,12 +151,12 @@ class Trainer:
 
                 # if mle_log is not None:
                 #     mle_log.update(
-                #         {"num_steps": total_steps},
+                #         {"n_steps": total_steps},
                 #         {"return": rewards},
                 #         model=jnp.array([-1]),
                 #         save=True,
                 #     )
-        return num_total_epochs, log_steps, log_return
+        return n_total_epochs, log_steps, log_return
 
 
 @jit
@@ -174,7 +167,8 @@ def flatten_dims(x):
 
 @eqx.filter_jit
 def loss_actor_and_critic(
-    model,
+    params,
+    static,
     obs: jnp.ndarray,
     target: jnp.ndarray,
     value_old: jnp.ndarray,
@@ -185,8 +179,10 @@ def loss_actor_and_critic(
     critic_coeff: float,
     entropy_coeff: float,
 ) -> jnp.ndarray:
+    model = eqx.combine(params, static)
+    vmodel = jit(vmap(model, in_axes=(0)))
     # value_pred, logits = jax.vmap(model)(obs)
-    value_pred, split_logits = jax.vmap(model)(obs)
+    value_pred, split_logits = jax.vmap(vmodel)(obs)
     # pi = tfp.distributions.Categorical(logits=logits)
     multi_pi = tfp.distributions.Categorical(logits=split_logits)
     value_pred = value_pred[:, 0]
@@ -231,15 +227,16 @@ def loss_actor_and_critic(
 
 def update(
     train_state: TrainState,
+    static,
     batch: Tuple,
     train_config,
     rng: chex.PRNGKey,
 ):
     """Perform multiple epochs of updates with multiple updates."""
     obs, action, log_pi_old, value, target, gae = batch
-    size_batch = train_config["num_train_envs"] * train_config["n_steps"]
+    size_batch = train_config["n_train_envs"] * train_config["n_steps"]
     size_minibatch = size_batch // train_config["n_minibatch"]
-    idxes = jnp.arange(train_config["num_train_envs"] * train_config["n_steps"])
+    idxes = jnp.arange(train_config["n_train_envs"] * train_config["n_steps"])
     avg_metrics_dict = defaultdict(int)
 
     for _ in range(train_config["epoch_ppo"]):
@@ -250,6 +247,7 @@ def update(
         ]
         train_state, total_loss = update_epoch(
             train_state,
+            static,
             idxes_list,
             flatten_dims(obs),
             flatten_dims(action),
@@ -289,6 +287,7 @@ def update(
 @eqx.filter_jit
 def update_epoch(
     train_state: TrainState,
+    static,
     idxes: jnp.ndarray,
     obs,
     action,
@@ -303,7 +302,8 @@ def update_epoch(
     for idx in idxes:
         grad_fn = eqx.filter_value_and_grad(loss_actor_and_critic, has_aux=True)
         total_loss, grads = grad_fn(
-            train_state.model,
+            train_state.params,
+            static,
             obs=obs[idx],
             target=target[idx],
             value_old=value[idx],

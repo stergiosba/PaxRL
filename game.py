@@ -12,7 +12,7 @@ from tensorflow_probability.substrates import jax as tfp
 
 
 def make_model(env_name, key):
-    env, _ = pax.make(env_name)
+    env = pax.make(env_name)
     return env, pax.training.Agent(env, key)
 
 def load(filename, model):
@@ -34,7 +34,7 @@ def use_model(model, env, obs, key, action_mapping=True):
 
 key = jr.PRNGKey(0)
 env, model = make_model("Prober-v0", key)
-model = load("ppo_agent_9.eqx", model)
+model = load("ppo_agent_final.eqx", model)
 
 
 # Initialize Pygame

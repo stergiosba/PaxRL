@@ -1,4 +1,4 @@
-from entry.oldtest import *
+from entry.entry import *
 import fire
 import time
 

@@ -5,23 +5,28 @@ import plotly.express as px
 import numpy as np
 import pandas as pd
 from types import SimpleNamespace
+import plotly.graph_objs as go
 
 Cfg = SimpleNamespace()
 Cfg.template = "simple_white"
 Cfg.xaxis = {"showgrid": True}
 Cfg.yaxis = {"showgrid": True}
 Cfg.markers = False
-Cfg.line_color = "#4dd2ff"
+# Cfg.line_color = "#4dd2ff"
+Cfg.line_color = "#0072BD"
+# Cfg.text_color = "#7FDBFF"
+Cfg.text_color = "#000000"
+Cfg.page_background_color = "#ffffff"
+Cfg.figure_background_color = "#ffffff"
 
 app = Dash(__name__)
 
-colors = {"background": "#111111", "text": "#7FDBFF"}
 app.layout = html.Div(
-    style={"backgroundColor": colors["background"]},
+    style={"backgroundColor": Cfg.page_background_color },
     children=[
         html.H1(
             children="Experiment Monitor",
-            style={"textAlign": "center", "color": colors["text"]},
+            style={"textAlign": "center", "color": Cfg.text_color},
         ),
         dp.DashPlayer(
             url="static/video.webm",
@@ -42,26 +47,45 @@ app.layout = html.Div(
     Input(component_id="interval-component", component_property="n_intervals"),
 )
 def update_graph(col_chosen):
-    df = pd.read_csv("data.csv")
+    df_mean = pd.read_csv("mean.csv")
+    df_std = pd.read_csv("std.csv")
+    fig = go.Figure()
 
-    fig = px.line(
-        df,
-        title="Reward",
-        template=Cfg.template,
-        markers=Cfg.markers,
-        color_discrete_map={"# Reward": Cfg.line_color},
-        width=400,
-        height=400,
+    fig.add_trace(go.Scatter(
+            x=np.arange(0,len(df_mean)),
+            y=df_mean['# Mean'],
+            mode='lines',
+        )
     )
 
-    fig.update_layout(
-        plot_bgcolor=colors["background"],
-        paper_bgcolor=colors["background"],
-        font_color=colors["text"],
-        showlegend=False,
-        xaxis=Cfg.xaxis,
-        yaxis=Cfg.yaxis,
-    )  # , x='continent', y=col_chosen, histfunc='avg')
+    fig.add_trace(go.Scatter(
+            x=np.arange(0,len(df_mean)),
+            y=df_mean['# Mean']-df_std['# Std'],
+            showlegend=False,
+            mode='lines',
+            line=dict(width=0),
+        )
+    )
+
+    fig.add_trace(go.Scatter(
+            x=np.arange(0,len(df_mean)),
+            y=df_mean['# Mean']+df_std['# Std'],
+            showlegend=False,
+            mode='lines',
+            line=dict(width=0),
+            fillcolor='rgba(0, 114, 189, 0.3)',
+            fill='tonexty',
+        )
+    )
+
+    # fig.update_layout(
+    #     plot_bgcolor=Cfg.figure_background_color ,
+    #     paper_bgcolor=Cfg.figure_background_color ,
+    #     font_color=Cfg.text_color,
+    #     showlegend=False,
+    #     xaxis=Cfg.xaxis,
+    #     yaxis=Cfg.yaxis,
+    # )
     return fig
 
 

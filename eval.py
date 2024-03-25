@@ -1,4 +1,5 @@
 import json
+import chex
 import fire
 import equinox as eqx
 import jax
@@ -10,11 +11,12 @@ from plotly.subplots import make_subplots
 import plotly.express as px
 from tensorflow_probability.substrates import jax as tfp
 import matplotlib.pyplot as plt
+from jax.debug import print as dprint
 
 from matplotlib.animation import FuncAnimation
 
 def make_model(env_name, key):
-    env, _ = pax.make(env_name)
+    env = pax.make(env_name)
     return env, pax.training.Agent(env, key)
 
 def load(filename, model):
@@ -22,72 +24,149 @@ def load(filename, model):
         hyperparams = json.loads(f.readline().decode())
         return eqx.tree_deserialise_leaves(f, model)
     
+
+
+key = jr.PRNGKey(3726)
+
+env, model_base = make_model("Prober-v0", key)
+
+env = pax.wrappers.FlattenObservationWrapper(env)
+
+agent = load("ppo_agent_final.eqx", model_base)
+
+agent = jax.jit(jax.vmap(agent, in_axes=0))
+
+
+@jax.jit
+def distance_tensor_jax(X) -> chex.ArrayDevice:
+    """Parallelized calculation of euclidean distances between all pairs of swarm agents
+        for all environment instances in one go.
+
+    Args:
+        `X (chex.Array)`: Swarm agents position tensor of shape: (n_envs,n_agents,2).
+
+    Returns:
+        `Distance_matrix (chex.Array)`: Distance tensor of shape: (n_envs,n_agents,n_agents)
+    """
+    return jnp.einsum("ijkl->ijk", (X[:, None, ...] - X[..., None, :]) ** 2)
+
+
+@eqx.filter_jit
+def batch_reset(env, key_reset: chex.PRNGKey, num_envs: int):
+    return jax.vmap(env.reset, in_axes=(0))(
+        jax.random.split(key_reset, num_envs)
+    )
+
+@eqx.filter_jit
+def batch_step(env, key, state, action):
+    return jax.vmap(env.step, in_axes=(0, 0, 0))(
+        key, state, action
+    )
+
+
+@eqx.filter_jit
+def batch_evaluate(env, model, num_envs, key_input):
     
-def use_model(model, env, obs, key, action_mapping=True):
-    value, split_logits = model(obs)
-    multi_pi = tfp.distributions.Categorical(logits=split_logits)
-    action = multi_pi.sample(seed=key)
-
-    if action_mapping:
-        action = env.action_space.map_action(action)
+    def policy(model, obs, key):
+        split_logits, value  = model(obs)
+        multi_pi = tfp.distributions.Categorical(logits=split_logits)
+        action = multi_pi.sample(seed=key)
+        return action.T, value
     
-    action = action[None, :]
-    return value, action
+    """Rollout an episode with lax.scan."""
+    # Reset the environments
+    key_rst, key_ep = jax.random.split(key_input)
+    obs, state = batch_reset(env, key_rst, num_envs)
 
-key = jr.PRNGKey(0)
+    def policy_step(state_input, _):
+        """lax.scan compatible step transition in jax env."""
+        obs, state, key, cum_reward, valid_mask = state_input
+        key, key_step, key_net = jax.random.split(key, 3)
 
-env, model = make_model("Prober-v0", key)
-agent = load("ppo_agent_9.eqx", model)
-obs, state = env.reset(key)
-obs = np.array(obs)
+        # Get the action from the model
+        action, value = policy(model, obs, key_net)      
 
-print(state)
+        key_step = jax.random.split(key_step, num_envs)
+        next_o, next_s, reward, done, info = batch_step(env,
+            key_step, state, action
+        )
 
-# n = env.params.scenario["n_scripted_entities"]
-# zero_action = np.concatenate([[20*np.ones(n)],[np.zeros(n)]]).transpose()
+        dist = distance_tensor_jax(next_s.X)
+
+        new_cum_reward = cum_reward + reward * valid_mask
+        new_valid_mask = valid_mask * (1 - done)
+        carry = [
+            next_o,
+            next_s,
+            key,
+            new_cum_reward,
+            new_valid_mask,
+        ]
+
+        y = [next_o, next_s, action, new_valid_mask, done, reward, info, dist]
+        return carry, y
+
+    # Scan over episode step loop
+    carry_out, scan_out = jax.lax.scan(
+        policy_step,
+        [
+            obs,
+            state,
+            key_ep,
+            jnp.array(num_envs * [0.0]),
+            jnp.array(num_envs * [1.0]),
+        ],
+        (),
+        1024,
+    )
+    obs, state, action, _, done, reward, info, dist = scan_out
+    cum_return = carry_out[-2].squeeze()
+    # return carry_out[0], jnp.mean(cum_return)
+    # return obs, state, action, jnp.mean(cum_return), done, reward
+    return state, jnp.mean(cum_return), jnp.std(cum_return), done, info, dist
 
 
-# O = []
-# while True:
-#     value, action = use_model(agent, env, obs, key)
-#     total_action = np.concatenate([zero_action, action], axis=0)
-#     obs, state, reward, done = env.step(key, state, total_action, np.empty([1,n]))
-#     obs = np.array(obs)
-#     key,_ = jr.split(key)
-#     O.append(obs)
-#     if done:
-#         obs, state = env.reset(key)
-#         break
+env_nums = 100
+state, return_mean, return_std, done, info, dist = batch_evaluate(env, agent, env_nums, key)
+
+env_id = 21
+env.render(state, env_id)
+
+episode_lengths = jnp.where(done.T==1)[1]
+
+fig, ax = plt.subplots()
+plt.plot(jnp.sqrt(dist[:-1,env_id,-1,:-1]))
+plt.show()
+
+# data = jnp.sqrt(dist[-2,:,-1,:-1])
+data = jnp.sqrt(dist[episode_lengths-1,jnp.arange(env_nums),-1,:-1])
 
 
-# O = np.array(O)
-# numframes = O.shape[0]
-# O = O.reshape(numframes,6,2)
+# Define colors for each dataset
+colors = ['red', 'green', 'blue', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
+x_ticks = np.arange(env_nums)
+n_agents = 5
+# Plotting
+plt.figure(figsize=(10, 5))  # Adjust figure size as needed
+for i in range(n_agents):
+    plt.scatter(x_ticks, data[:, i], color=colors[i], label=f'Value {i+1}')
 
-# def matplotlib_render(obs, numframes=1000, record=False):
+count = 0
+for x in x_ticks:
+    highlight_index = state.leader[0, x]
+    plt.scatter(x, data[x, highlight_index], color='gold', marker='*', s=200)
+    if all(data[x, highlight_index] <= data[x, i] for i in range(n_agents) if i != highlight_index):
+        count += 1
+plt.axhline(y=60, color='black', linestyle='--')
 
-#     fig, ax = plt.subplots()
-#     ax.set_xlim(0, 800)  # Set x-axis limits
-#     ax.set_ylim(0, 800)  # Set y-axis limits
+print(f"Golden star is under all points at {100*count/env_nums}% of the runs")
 
-#     # Generate initial data for the scatter plot
 
-#     x_data = obs[0, :, 0]
-#     y_data = obs[0, :, 1]
-    
-#     scatter = ax.scatter(x_data, y_data, s=80)  # Initial scatter plot
+# Adding labels and legend
+plt.xlabel('X Axis')
+plt.ylabel('Y Axis')
+plt.title('Plot with 100 Ticks on X-axis and 6 Values as Dots on Y-axis')
+plt.legend()
 
-#     # Define the update function for the animation
-#     def update(frame):
-#         #  Update the x and y coordinates of the scatter plot with new values
-#         scatter.set_offsets(obs[frame, :, :])
-
-#         return scatter,
-
-#     # Create the animation
-#     ani = FuncAnimation(fig, update, frames=numframes, interval=20, blit=True, repeat=False)
-
-#     # Show the animation
-#     plt.show()
-    
-# matplotlib_render(O, numframes)
+# Show plot
+plt.show()

@@ -1,6 +1,5 @@
 import equinox as eqx
 
-
 class EnvState(eqx.Module):
     """The environment state class.
 

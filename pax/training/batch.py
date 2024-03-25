@@ -14,7 +14,7 @@ class BatchManager(object):
         action_space: chex.ArrayDevice,
         state_shape,
     ):
-        self.num_envs = train_config["num_train_envs"]
+        self.num_envs = train_config["n_train_envs"]
         self.n_steps = train_config["n_steps"]
         self.discount = train_config["discount"]
         self.gae_lambda = train_config["gae_lambda"]

@@ -60,13 +60,14 @@ class Agent(eqx.Module):
     """The agent class. This class contains the critic and actor networks."""
 
     critic: eqx.Module
-    actor_1: eqx.Module
-    # actor_2: eqx.Module
+    actor: eqx.Module
+    
 
     def __init__(self, env: Environment, key: chex.PRNGKey):
         # TODO: Refactor this agent to be more general.
 
         obs_shape = env.observation_space.shape
+
         action_space_size = env.action_space.size
 
         keys = jrandom.split(key, 6)
@@ -75,27 +76,99 @@ class Agent(eqx.Module):
             [
                 QRLinear(
                     jnp.array(obs_shape).prod(),
-                    256,
-                    jnp.sqrt(1),
+                    128,
+                    jnp.sqrt(2),
                     key=keys[0],
                 ),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(256, 128, jnp.sqrt(1), key=keys[1]),
+                QRLinear(128,64, jnp.sqrt(2), key=keys[1]),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(128, 1, jnp.array([1]), key=keys[2]),
+                QRLinear(64, 1, jnp.array([1]), key=keys[2]),
             ]
         )
 
-        self.actor_1 = eqx.nn.Sequential(
+        self.actor = eqx.nn.Sequential(
             [
                 QRLinear(
                     jnp.array(obs_shape).prod(),
-                    256,
-                    jnp.sqrt(1),
+                    128,
+                    jnp.sqrt(2),
                     key=keys[3],
                 ),
                 eqx.nn.Lambda(jnn.tanh),
-                QRLinear(256, 128, jnp.sqrt(1), key=keys[4]),
+                QRLinear(128, 64, jnp.sqrt(2), key=keys[4]),
+                eqx.nn.Lambda(jnn.tanh),
+                QRLinear(64, action_space_size, jnp.array([0.01]), key=keys[5]),
+            ]
+        )
+
+    @eqx.filter_jit
+    def __call__(
+        self, x: chex.ArrayDevice
+    ) -> Tuple[chex.ArrayDevice, chex.ArrayDevice]:
+        """Forward pass of the agent. Returns the value and logits.
+
+        Args:
+            x (chex.ArrayDevice): The input to the agent. Should be of the shape (batch_size, obs_shape)
+
+        Returns:
+            _type_: _description_
+        """
+        value = self.critic(x)
+        logits = self.actor(x)
+
+        split_logits = jnp.split(logits, [11])
+
+        return split_logits, value 
+
+
+class AgentCNN(eqx.Module):
+    """The agent class. This class contains the critic and actor networks."""
+
+    critic: eqx.Module
+    actor: eqx.Module
+    
+
+    def __init__(self, env: Environment, key: chex.PRNGKey):
+        # TODO: Refactor this agent to be more general.
+
+        obs_shape = env.observation_space.shape
+
+        action_space_size = env.action_space.size
+
+        keys = jrandom.split(key, 6)
+
+        self.critic = eqx.nn.Sequential(
+            [
+                eqx.nn.Conv2d(1, 1, kernel_size=1, key=keys[0]),
+                # eqx.nn.AvgPool2d(kernel_size=1),
+                eqx.nn.Lambda(jnn.tanh),
+                eqx.nn.Lambda(jnp.ravel),
+                #     jnp.array(obs_shape).prod(),
+                #     256,
+                #     jnp.sqrt(2),
+                #     key=keys[3],
+                # ),
+                # eqx.nn.Lambda(jnn.tanh),
+                QRLinear(44, 128, jnp.sqrt(2), key=keys[4]),
+                eqx.nn.Lambda(jnn.tanh),
+                QRLinear(128, 1, jnp.array([1.0]), key=keys[5]),
+            ]
+        )
+
+        self.actor = eqx.nn.Sequential(
+            [
+                eqx.nn.Conv2d(1, 1, kernel_size=1, key=keys[3]),
+                # eqx.nn.AvgPool2d(kernel_size=1),
+                eqx.nn.Lambda(jnn.tanh),
+                eqx.nn.Lambda(jnp.ravel),
+                #     jnp.array(obs_shape).prod(),
+                #     256,
+                #     jnp.sqrt(2),
+                #     key=keys[3],
+                # ),
+                # eqx.nn.Lambda(jnn.tanh),
+                QRLinear(44, 128, jnp.sqrt(2), key=keys[4]),
                 eqx.nn.Lambda(jnn.tanh),
                 QRLinear(128, action_space_size, jnp.array([0.01]), key=keys[5]),
             ]
@@ -113,8 +186,9 @@ class Agent(eqx.Module):
         Returns:
             _type_: _description_
         """
+        x = x[None,...]
         value = self.critic(x)
-        logits = self.actor_1(x) #* self.actor_2(x)
+        logits = self.actor(x)
 
         split_logits = jnp.split(logits, [11])
 
